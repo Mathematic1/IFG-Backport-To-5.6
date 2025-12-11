@@ -491,6 +491,7 @@ void LumenRadianceCache::RenderLumenHardwareRayTracingRadianceCache(
 	const TInlineArray<FRDGBufferRef>& ProbeTraceTileAllocatorArray,
 	const TInlineArray<FRDGBufferRef>& ProbeTraceTileDataArray,
 	const TInlineArray<FRDGBufferRef>& ProbeTraceDataArray,
+	const TInlineArray<FRDGBufferRef>& ProbeWorldOffsetArray,
 	const TInlineArray<FRDGBufferRef>& HardwareRayTracingRayAllocatorBufferArray,
 	const TInlineArray<FRDGBufferRef>& TraceProbesIndirectArgsArray,
 	ERDGPassFlags ComputePassFlags)

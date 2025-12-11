@@ -18,11 +18,15 @@ namespace LumenRadianceCache
 		FRDGTextureRef DepthProbeAtlasTexture;
 		FRDGTextureRef FinalIrradianceAtlas;
 		FRDGTextureRef ProbeOcclusionAtlas;
+		FRDGTextureRef BlendedIrradianceAtlas;
+		FRDGBufferRef BlendedProbeWorldOffset;
+		FRDGTextureRef BlendedOcclusionAtlas;
 		FRDGTextureRef FinalRadianceAtlas;
 		FRDGTextureRef FinalSkyVisibilityAtlas;
 		FRDGTextureRef RadianceProbeAtlasTextureSource;
 		FRDGTextureRef SkyVisibilityProbeAtlasTextureSource;
 		bool bPersistentCache;
+		bool bEnabledProbeBlendingThisFrame;
 	};
 
 	void RenderLumenHardwareRayTracingRadianceCache(
@@ -35,6 +39,7 @@ namespace LumenRadianceCache
 		const TInlineArray<FRDGBufferRef>& ProbeTraceTileAllocatorArray,
 		const TInlineArray<FRDGBufferRef>& ProbeTraceTileDataArray,
 		const TInlineArray<FRDGBufferRef>& ProbeTraceDataArray,
+		const TInlineArray<FRDGBufferRef>& ProbeWorldOffsetArray,
 		const TInlineArray<FRDGBufferRef>& HardwareRayTracingRayAllocatorBufferArray,
 		const TInlineArray<FRDGBufferRef>& TraceProbesIndirectArgsArray,
 		ERDGPassFlags ComputePassFlags);
