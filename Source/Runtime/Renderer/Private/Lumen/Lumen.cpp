@@ -64,6 +64,12 @@ static TAutoConsoleVariable<float> CVarLumenCachedLightingPreExposure(
 	ECVF_Scalability | ECVF_RenderThreadSafe
 );
 
+static TAutoConsoleVariable<bool> CVarLumenIrradianceFieldGather(
+	TEXT("r.Lumen.IrradianceFieldGather"),
+	1,
+	TEXT("Whether to use the Irradiance Field Final Gather, an experimental opaque final gather that interpolates from pre-calculated irradiance in probes for cheaper, but lower quality GI."),
+	ECVF_Scalability | ECVF_RenderThreadSafe);
+
 bool DoesRuntimePlatformSupportLumen()
 {
 	return UE::PixelFormat::HasCapabilities(PF_R16_UINT, EPixelFormatCapabilities::TypedUAVLoad);
@@ -183,6 +189,27 @@ namespace Lumen
 	bool SupportsMultipleClosureEvaluation(const FViewInfo& View)
 	{
 		return Substrate::IsSubstrateEnabled() && !Substrate::IsSubstrateBlendableGBufferEnabled(View.GetShaderPlatform()) && View.SubstrateViewData.SceneData->ViewsMaxClosurePerPixel > 1;
+	}
+	
+	ELumenFinalGatherMethod GetFinalGatherMethod(const FSceneViewFamily& ViewFamily, EShaderPlatform ShaderPlatform)
+	{
+		if (UseIrradianceFieldGather())
+		{
+			return ELumenFinalGatherMethod::IrradianceFieldGather;
+		}
+		else if (Lumen::UseReSTIRGather(ViewFamily, ShaderPlatform))
+		{
+			return ELumenFinalGatherMethod::ReSTIRGather;
+		}
+		else
+		{
+			return ELumenFinalGatherMethod::ScreenProbeGather;
+		}
+	}
+
+	bool UseIrradianceFieldGather()
+	{
+		return CVarLumenIrradianceFieldGather.GetValueOnRenderThread();
 	}
 }
 

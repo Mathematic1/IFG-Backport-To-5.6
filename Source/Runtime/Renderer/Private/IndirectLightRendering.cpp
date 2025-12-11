@@ -949,6 +949,7 @@ void FDeferredShadingSceneRenderer::DispatchAsyncLumenIndirectLightingWork(
 				ViewOutputs.MeshSDFGridParameters,
 				ViewOutputs.RadianceCacheParameters,
 				ViewOutputs.ScreenBentNormalParameters,
+				ViewOutputs.LumenUpsampleParameters,
 				ERDGPassFlags::AsyncCompute);
 
 			if (ViewPipelineState.ReflectionsMethod == EReflectionsMethod::Lumen && bAsyncComputeReflections)
@@ -1043,6 +1044,8 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 		IScreenSpaceDenoiser::FDiffuseIndirectInputs DenoiserInputs;
 		IScreenSpaceDenoiser::FDiffuseIndirectHarmonic DenoiserSphericalHarmonicInputs;
 		FLumenScreenSpaceBentNormalParameters ScreenBentNormalParameters;
+		FLumenUpsampleParameters LumenUpsampleParameters;
+		LumenUpsampleParameters.DownsampleFactor = 1;
 
 		//Tiled screen space reflection context
 		FScreenSpaceReflectionTileClassification ScreenSpaceReflectionTileClassification;
@@ -1075,6 +1078,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 					MeshSDFGridParameters,
 					RadianceCacheParameters,
 					ScreenBentNormalParameters,
+					LumenUpsampleParameters,
 					ERDGPassFlags::Compute);
 			}
 

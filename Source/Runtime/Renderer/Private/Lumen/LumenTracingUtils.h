@@ -149,6 +149,16 @@ BEGIN_SHADER_PARAMETER_STRUCT(FLumenScreenSpaceBentNormalParameters, )
 	SHADER_PARAMETER(uint32, ShortRangeAOMode)
 END_SHADER_PARAMETER_STRUCT()
 
+BEGIN_SHADER_PARAMETER_STRUCT(FLumenUpsampleParameters, )
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float>, DownsampledSceneDepth)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<UNORM float3>, DownsampledSceneWorldNormal)
+	SHADER_PARAMETER(uint32, DownsampleFactor)
+	SHADER_PARAMETER(FIntPoint, IntegrateViewMin)
+	SHADER_PARAMETER(FIntPoint, IntegrateViewSize)
+	SHADER_PARAMETER(FVector2f, DownsampledBufferInvSize)
+	SHADER_PARAMETER(uint32, ScreenProbeGatherStateFrameIndex)
+END_SHADER_PARAMETER_STRUCT()
+
 extern void CullHeightfieldObjectsForView(
 	FRDGBuilder& GraphBuilder,
 	const FScene* Scene,
@@ -193,8 +203,6 @@ extern FLumenHZBScreenTraceParameters SetupHZBScreenTraceParameters(
 	FRDGBuilder& GraphBuilder, 
 	const FViewInfo& View,
 	const FSceneTextures& SceneTextures);
-
-extern int32 GLumenIrradianceFieldGather;
 
 namespace LumenIrradianceFieldGather
 {

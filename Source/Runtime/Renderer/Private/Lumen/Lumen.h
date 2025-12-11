@@ -32,6 +32,13 @@ inline double BoxSurfaceArea(FVector Extent)
 	return 2.0 * (Extent.X * Extent.Y + Extent.Y * Extent.Z + Extent.Z * Extent.X);
 }
 
+enum class ELumenFinalGatherMethod
+{
+	ScreenProbeGather,
+	IrradianceFieldGather,
+	ReSTIRGather
+};
+
 namespace Lumen
 {
 	// Must match usf
@@ -55,6 +62,9 @@ namespace Lumen
 		Voxels,
 		MAX
 	};
+	
+	ELumenFinalGatherMethod GetFinalGatherMethod(const FSceneViewFamily& ViewFamily, EShaderPlatform ShaderPlatform);
+	bool UseIrradianceFieldGather();
 
 	void DebugResetSurfaceCache();
 

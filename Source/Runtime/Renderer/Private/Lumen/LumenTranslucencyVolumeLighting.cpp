@@ -731,6 +731,7 @@ LumenRadianceCache::FUpdateInputs FDeferredShadingSceneRenderer::GetLumenTranslu
 void FDeferredShadingSceneRenderer::ComputeLumenTranslucencyGIVolume(
 	FRDGBuilder& GraphBuilder,
 	FViewInfo& View, 
+	const FSceneTextures& SceneTextures,
 	const FLumenSceneFrameTemporaries& FrameTemporaries,
 	LumenRadianceCache::FRadianceCacheInterpolationParameters& RadianceCacheParameters,
 	ERDGPassFlags ComputePassFlags)
@@ -767,6 +768,7 @@ void FDeferredShadingSceneRenderer::ComputeLumenTranslucencyGIVolume(
 					OutputArray,
 					Scene,
 					ViewFamily,
+					SceneTextures,
 					LumenCardRenderer.bPropagateGlobalLightingChange,
 					ComputePassFlags);
 			}

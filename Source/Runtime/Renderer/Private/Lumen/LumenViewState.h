@@ -254,6 +254,7 @@ public:
 	float ClipmapWorldExtent = 0.0f;
 	float ClipmapDistributionBase = 0.0f;
 	float CachedLightingPreExposure = 0.0f;
+	int32 ProbeOffsetMode = 0;
 
 	/** Clipmaps of probe indexes, used to lookup the probe index for a world space position. */
 	TRefCountPtr<IPooledRenderTarget> RadianceProbeIndirectionTexture;
@@ -265,6 +266,9 @@ public:
 	TRefCountPtr<IPooledRenderTarget> FinalSkyVisibilityAtlas;
 	TRefCountPtr<IPooledRenderTarget> FinalIrradianceAtlas;
 	TRefCountPtr<IPooledRenderTarget> ProbeOcclusionAtlas;
+	TRefCountPtr<IPooledRenderTarget> BlendedIrradianceAtlas;
+	TRefCountPtr<IPooledRenderTarget> BlendedOcclusionAtlas;
+	TRefCountPtr<FRDGPooledBuffer> BlendedProbeWorldOffset;
 
 	TRefCountPtr<IPooledRenderTarget> DepthProbeAtlasTexture;
 
@@ -272,8 +276,14 @@ public:
 	TRefCountPtr<FRDGPooledBuffer> ProbeFreeListAllocator;
 	TRefCountPtr<FRDGPooledBuffer> ProbeFreeList;
 	TRefCountPtr<FRDGPooledBuffer> ProbeLastUsedFrame;
+	TRefCountPtr<FRDGPooledBuffer> ProbeCreatedFrame;
 	TRefCountPtr<FRDGPooledBuffer> ProbeLastTracedFrame;
 	TRefCountPtr<FRDGPooledBuffer> ProbeWorldOffset;
+	EPixelFormat ProbeWorldOffsetFormat = PF_R8;
+
+	TRefCountPtr<FRDGPooledBuffer> ProbeInterpolationMisses;
+	TRefCountPtr<FRDGPooledBuffer> ProbeAdaptiveIndices;
+	TRefCountPtr<FRDGPooledBuffer> ProbeValid;
 
 	void ReleaseTextures()
 	{
@@ -284,13 +294,20 @@ public:
 		FinalSkyVisibilityAtlas.SafeRelease();
 		FinalIrradianceAtlas.SafeRelease();
 		ProbeOcclusionAtlas.SafeRelease();
+		BlendedIrradianceAtlas.SafeRelease();
+		BlendedOcclusionAtlas.SafeRelease();
+		BlendedProbeWorldOffset.SafeRelease();
 		DepthProbeAtlasTexture.SafeRelease();
 		ProbeAllocator.SafeRelease();
 		ProbeFreeListAllocator.SafeRelease();
 		ProbeFreeList.SafeRelease();
 		ProbeLastUsedFrame.SafeRelease();
+		ProbeCreatedFrame.SafeRelease();
 		ProbeLastTracedFrame.SafeRelease();
 		ProbeWorldOffset.SafeRelease();
+		ProbeInterpolationMisses.SafeRelease();
+		ProbeAdaptiveIndices.SafeRelease();
+		ProbeValid.SafeRelease();
 	}
 
 #if WITH_MGPU

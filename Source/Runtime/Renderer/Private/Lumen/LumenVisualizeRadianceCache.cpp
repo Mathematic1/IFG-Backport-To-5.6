@@ -49,6 +49,72 @@ BEGIN_SHADER_PARAMETER_STRUCT(FVisualizeRadianceCacheCommonParameters, )
 	SHADER_PARAMETER(uint32, ProbeClipmapIndex)
 END_SHADER_PARAMETER_STRUCT()
 
+class FClearProbeVisualizeBufferCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FClearProbeVisualizeBufferCS)
+	SHADER_USE_PARAMETER_STRUCT(FClearProbeVisualizeBufferCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, RWProbeVisualizeBufferIndirectArguments)
+	END_SHADER_PARAMETER_STRUCT()
+
+public:
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return DoesPlatformSupportLumenGI(Parameters.Platform);
+	}
+
+	static uint32 GetGroupSize()
+	{
+		return 64;
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZE"), GetGroupSize());
+	}
+};
+
+IMPLEMENT_GLOBAL_SHADER(FClearProbeVisualizeBufferCS, "/Engine/Private/Lumen/LumenVisualizeRadianceCache.usf", "ClearProbeVisualizeBufferCS", SF_Compute);
+
+class FBuildProbeVisualizeBufferCS : public FGlobalShader
+{
+	DECLARE_GLOBAL_SHADER(FBuildProbeVisualizeBufferCS)
+	SHADER_USE_PARAMETER_STRUCT(FBuildProbeVisualizeBufferCS, FGlobalShader);
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, RWProbeVisualizeBufferIndirectArguments)
+		SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint4>, RWProbeVisualizeBuffer)
+		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
+		SHADER_PARAMETER_STRUCT_INCLUDE(FVisualizeRadianceCacheCommonParameters, VisualizeCommonParameters)
+	END_SHADER_PARAMETER_STRUCT()
+
+	class FAdaptiveProbes : SHADER_PERMUTATION_BOOL("ADAPTIVE_PROBES");
+	using FPermutationDomain = TShaderPermutationDomain<FAdaptiveProbes>;
+
+public:
+
+	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		return DoesPlatformSupportLumenGI(Parameters.Platform);
+	}
+
+	static uint32 GetGroupSize()
+	{
+		return 8;
+	}
+
+	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
+	{
+		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
+		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZE"), GetGroupSize());
+	}
+};
+
+IMPLEMENT_GLOBAL_SHADER(FBuildProbeVisualizeBufferCS, "/Engine/Private/Lumen/LumenVisualizeRadianceCache.usf", "BuildProbeVisualizeBufferCS", SF_Compute);
+
 class FVisualizeRadianceCacheVS : public FGlobalShader
 {
 	DECLARE_GLOBAL_SHADER(FVisualizeRadianceCacheVS);
@@ -57,7 +123,15 @@ class FVisualizeRadianceCacheVS : public FGlobalShader
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
 		SHADER_PARAMETER_STRUCT_INCLUDE(FVisualizeRadianceCacheCommonParameters, VisualizeCommonParameters)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint4>, ProbeVisualizeBuffer)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, LastFrameProbeInterpolationMisses)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, ProbeAdaptiveIndices)
+		SHADER_PARAMETER(uint32, MaxNumProbes)
+		RDG_BUFFER_ACCESS(IndirectDrawParameter, ERHIAccess::IndirectArgs)
 	END_SHADER_PARAMETER_STRUCT()
+
+	class FAdaptiveProbes : SHADER_PERMUTATION_BOOL("ADAPTIVE_PROBES");
+	using FPermutationDomain = TShaderPermutationDomain<FAdaptiveProbes>;
 
 public:
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
@@ -76,6 +150,8 @@ class FVisualizeRadianceCachePS : public FGlobalShader
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, View)
 		SHADER_PARAMETER_STRUCT_INCLUDE(FVisualizeRadianceCacheCommonParameters, VisualizeCommonParameters)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, ProbeAdaptiveIndices)
+		SHADER_PARAMETER_RDG_BUFFER_SRV(Buffer<uint>, ProbeValid)
 	END_SHADER_PARAMETER_STRUCT()
 
 public:
@@ -83,13 +159,19 @@ public:
 	class FVisualizeMode : SHADER_PERMUTATION_RANGE_INT("VISUALIZE_MODE", 1, 2);
 	class FRadianceCacheIrradiance : SHADER_PERMUTATION_BOOL("RADIANCE_CACHE_IRRADIANCE");
 	class FRadianceCacheSkyVisibility : SHADER_PERMUTATION_BOOL("RADIANCE_CACHE_SKY_VISIBILITY");
-	using FPermutationDomain = TShaderPermutationDomain<FVisualizeMode, FRadianceCacheIrradiance, FRadianceCacheSkyVisibility>;
+	class FAdaptiveProbes : SHADER_PERMUTATION_BOOL("ADAPTIVE_PROBES");
+	using FPermutationDomain = TShaderPermutationDomain<FVisualizeMode, FRadianceCacheIrradiance, FRadianceCacheSkyVisibility, FAdaptiveProbes>;
 	
 	static FPermutationDomain RemapPermutation(FPermutationDomain PermutationVector)
 	{
 		if (PermutationVector.Get<FVisualizeMode>() != 1)
 		{
 			PermutationVector.Set<FRadianceCacheIrradiance>(false);
+		}
+
+		if (!PermutationVector.Get<FRadianceCacheIrradiance>())
+		{
+			PermutationVector.Set<FAdaptiveProbes>(false);
 		}
 
 		return PermutationVector;
@@ -123,7 +205,7 @@ LumenRadianceCache::FRadianceCacheInputs GetFinalGatherRadianceCacheInputs(const
 	}
 	else
 	{
-		if (GLumenIrradianceFieldGather)
+		if (Lumen::UseIrradianceFieldGather())
 		{
 			return LumenIrradianceFieldGather::SetupRadianceCacheInputs();
 		}
@@ -139,96 +221,165 @@ extern int32 GLumenVisualizeTranslucencyVolumeRadianceCache;
 
 void FDeferredShadingSceneRenderer::RenderLumenRadianceCacheVisualization(FRDGBuilder& GraphBuilder, const FMinimalSceneTextures& SceneTextures)
 {
-	const FViewInfo& View = Views[0];
-	const FPerViewPipelineState& ViewPipelineState = GetViewPipelineState(View);
-	const bool bAnyLumenActive = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen;
-
-	if (Views.Num() == 1
-		&& View.ViewState
-		&& bAnyLumenActive
-		&& (LumenScreenProbeGather::UseRadianceCache() || (GLumenVisualizeTranslucencyVolumeRadianceCache && CVarLumenTranslucencyVolume.GetValueOnRenderThread()))
-		&& CVarLumenRadianceCacheVisualize.GetValueOnRenderThread() != 0)
+	for (const FViewInfo& View : Views)
 	{
-		RDG_EVENT_SCOPE(GraphBuilder, "VisualizeLumenRadianceCache");
+		const FPerViewPipelineState& ViewPipelineState = GetViewPipelineState(View);
+		const bool bAnyLumenActive = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen;
 
-		const FRadianceCacheState& RadianceCacheState = GLumenVisualizeTranslucencyVolumeRadianceCache != 0 ? Views[0].ViewState->Lumen.TranslucencyVolumeRadianceCacheState : Views[0].ViewState->Lumen.RadianceCacheState;
-
-		FRDGTextureRef SceneColor = SceneTextures.Color.Resolve;
-		FRDGTextureRef SceneDepth = SceneTextures.Depth.Resolve;
-
-		const LumenRadianceCache::FRadianceCacheInputs RadianceCacheInputs = GetFinalGatherRadianceCacheInputs(View);
-
-		const int32 VisualizationClipmapIndex = FMath::Clamp(GLumenRadianceCacheVisualizeClipmapIndex, -1, RadianceCacheState.Clipmaps.Num() - 1);
-		for (int32 ClipmapIndex = 0; ClipmapIndex < RadianceCacheState.Clipmaps.Num(); ++ClipmapIndex)
+		if (View.ViewState
+			&& bAnyLumenActive
+			&& (LumenScreenProbeGather::UseRadianceCache()
+				|| (GLumenVisualizeTranslucencyVolumeRadianceCache && CVarLumenTranslucencyVolume.GetValueOnRenderThread())
+				|| Lumen::UseIrradianceFieldGather())
+			&& CVarLumenRadianceCacheVisualize.GetValueOnRenderThread() != 0)
 		{
-			if (VisualizationClipmapIndex != -1 && VisualizationClipmapIndex != ClipmapIndex)
+			RDG_EVENT_SCOPE(GraphBuilder, "VisualizeLumenRadianceCache");
+
+			const FRadianceCacheState& RadianceCacheState = GLumenVisualizeTranslucencyVolumeRadianceCache != 0 ? View.ViewState->Lumen.TranslucencyVolumeRadianceCacheState : View.ViewState->Lumen.RadianceCacheState;
+
+			FRDGTextureRef SceneColor = SceneTextures.Color.Resolve;
+			FRDGTextureRef SceneDepth = SceneTextures.Depth.Resolve;
+
+			const LumenRadianceCache::FRadianceCacheInputs RadianceCacheInputs = GetFinalGatherRadianceCacheInputs(View);
+
+			const int32 VisualizationClipmapIndex = FMath::Clamp(GLumenRadianceCacheVisualizeClipmapIndex, -1, RadianceCacheState.Clipmaps.Num() - 1);
+			for (int32 ClipmapIndex = 0; ClipmapIndex < RadianceCacheState.Clipmaps.Num(); ++ClipmapIndex)
 			{
-				continue;
-			}
-
-			const FRadianceCacheClipmap& Clipmap = RadianceCacheState.Clipmaps[ClipmapIndex];
-
-			FVisualizeRadianceCacheCommonParameters VisualizeCommonParameters;
-			LumenRadianceCache::GetInterpolationParameters(View, GraphBuilder, RadianceCacheState, RadianceCacheInputs, VisualizeCommonParameters.RadianceCacheParameters);
-			VisualizeCommonParameters.VisualizeProbeRadiusScale = GLumenRadianceCacheVisualizeRadiusScale * 0.05f;
-			VisualizeCommonParameters.ProbeClipmapIndex = ClipmapIndex;
-			VisualizeCommonParameters.ClipmapCornerTWSAndCellSizeForVisualization = FVector4f(Clipmap.CornerTranslatedWorldSpace, Clipmap.CellSize);
-			VisualizeCommonParameters.ReflectionStruct = CreateReflectionUniformBuffer(GraphBuilder, View);
-
-			FVisualizeRadianceCacheParameters* PassParameters = GraphBuilder.AllocParameters<FVisualizeRadianceCacheParameters>();
-			PassParameters->VS.VisualizeCommonParameters = VisualizeCommonParameters;
-			PassParameters->PS.VisualizeCommonParameters = VisualizeCommonParameters;
-			PassParameters->VS.View = GetShaderBinding(View.ViewUniformBuffer);
-			PassParameters->PS.View = GetShaderBinding(View.ViewUniformBuffer);
-
-			PassParameters->RenderTargets.DepthStencil = FDepthStencilBinding(
-				SceneDepth,
-				ERenderTargetLoadAction::ENoAction,
-				ERenderTargetLoadAction::ELoad,
-				FExclusiveDepthStencil::DepthWrite_StencilWrite);
-			PassParameters->RenderTargets[0] = FRenderTargetBinding(SceneColor, ERenderTargetLoadAction::ELoad);
-
-			const int32 NumInstancesPerClipmap = RadianceCacheInputs.RadianceProbeClipmapResolution * RadianceCacheInputs.RadianceProbeClipmapResolution * RadianceCacheInputs.RadianceProbeClipmapResolution;
-
-			const bool bIrradiance = RadianceCacheInputs.CalculateIrradiance != 0;
-			const bool bSkyVisibility = RadianceCacheInputs.UseSkyVisibility != 0;
-			const int32 VisualizationMode = FMath::Clamp(CVarLumenRadianceCacheVisualize.GetValueOnRenderThread(), 1, 2);
-
-			GraphBuilder.AddPass(
-				RDG_EVENT_NAME("Visualize Radiance Cache Clipmap:%d", ClipmapIndex),
-				PassParameters,
-				ERDGPassFlags::Raster,
-				[PassParameters, &View, NumInstancesPerClipmap, VisualizationMode, bIrradiance, bSkyVisibility](FRDGAsyncTask, FRHICommandList& RHICmdList)
+				if (VisualizationClipmapIndex != -1 && VisualizationClipmapIndex != ClipmapIndex)
 				{
-					TShaderMapRef<FVisualizeRadianceCacheVS> VertexShader(View.ShaderMap);
+					continue;
+				}
 
-					FVisualizeRadianceCachePS::FPermutationDomain PermutationVector;
-					PermutationVector.Set<FVisualizeRadianceCachePS::FVisualizeMode>(VisualizationMode);
-					PermutationVector.Set<FVisualizeRadianceCachePS::FRadianceCacheIrradiance>(bIrradiance);
-					PermutationVector.Set<FVisualizeRadianceCachePS::FRadianceCacheSkyVisibility>(bSkyVisibility);
-					PermutationVector = FVisualizeRadianceCachePS::RemapPermutation(PermutationVector);
-					auto PixelShader = View.ShaderMap->GetShader<FVisualizeRadianceCachePS>(PermutationVector);
+				const FRadianceCacheClipmap& Clipmap = RadianceCacheState.Clipmaps[ClipmapIndex];
 
-					RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+				FVisualizeRadianceCacheCommonParameters VisualizeCommonParameters;
+				LumenRadianceCache::GetInterpolationParameters(View, GraphBuilder, RadianceCacheState, RadianceCacheInputs, VisualizeCommonParameters.RadianceCacheParameters);
+				VisualizeCommonParameters.VisualizeProbeRadiusScale = GLumenRadianceCacheVisualizeRadiusScale * 0.05f;
+				VisualizeCommonParameters.ProbeClipmapIndex = ClipmapIndex;
+				VisualizeCommonParameters.ClipmapCornerTWSAndCellSizeForVisualization = FVector4f(Clipmap.CornerTranslatedWorldSpace, Clipmap.CellSize);
+				VisualizeCommonParameters.ReflectionStruct = CreateReflectionUniformBuffer(GraphBuilder, View);
 
-					FGraphicsPipelineStateInitializer GraphicsPSOInit;
-					RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
-					GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGB>::GetRHI();
-					GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
-					GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_DepthNear>::GetRHI();
-					GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GEmptyVertexDeclaration.VertexDeclarationRHI;
-					GraphicsPSOInit.BoundShaderState.VertexShaderRHI = VertexShader.GetVertexShader();
-					GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader.GetPixelShader();
-					GraphicsPSOInit.PrimitiveType = PT_TriangleList;
+				const int32 MaxNumProbes = RadianceCacheInputs.ProbeAtlasResolutionInProbes.X * RadianceCacheInputs.ProbeAtlasResolutionInProbes.Y;
+				FRDGBufferRef ProbeVisualizeBufferIndirectArguments = GraphBuilder.CreateBuffer(FRDGBufferDesc::CreateIndirectDesc<FRHIDrawIndexedIndirectParameters>(1), TEXT("Lumen.RadianceCache.Visualize.ProbeVisualizeBufferIndirectArguments"));
+				FRDGBufferRef ProbeVisualizeBuffer = GraphBuilder.CreateBuffer(FRDGBufferDesc::CreateBufferDesc(sizeof(FUintVector4), MaxNumProbes), TEXT("Lumen.RadianceCache.Visualize.ProbeVisualizeBuffer"));
+				FRDGBufferUAVRef ProbeVisualizeBufferIndirectArgumentsUAV = GraphBuilder.CreateUAV(FRDGBufferUAVDesc(ProbeVisualizeBufferIndirectArguments));
+				FRDGBufferUAVRef ProbeVisualizeBufferUAV = GraphBuilder.CreateUAV(FRDGBufferUAVDesc(ProbeVisualizeBuffer, PF_R32G32B32A32_UINT));
 
-					SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, 0);
+				{
+					FClearProbeVisualizeBufferCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FClearProbeVisualizeBufferCS::FParameters>();
+					PassParameters->RWProbeVisualizeBufferIndirectArguments = ProbeVisualizeBufferIndirectArgumentsUAV;
 
-					SetShaderParameters(RHICmdList, VertexShader, VertexShader.GetVertexShader(), PassParameters->VS);
-					SetShaderParameters(RHICmdList, PixelShader, PixelShader.GetPixelShader(), PassParameters->PS);
+					auto ComputeShader = View.ShaderMap->GetShader<FClearProbeVisualizeBufferCS>();
+					const FIntVector GroupSize = FComputeShaderUtils::GetGroupCount(1, FClearProbeVisualizeBufferCS::GetGroupSize());
 
-					RHICmdList.SetStreamSource(0, NULL, 0);
-					RHICmdList.DrawIndexedPrimitive(GCubeIndexBuffer.IndexBufferRHI, 0, 0, 8, 0, 2 * 6, NumInstancesPerClipmap);
-				});
+					FComputeShaderUtils::AddPass(
+						GraphBuilder,
+						RDG_EVENT_NAME("ClearProbeVisualizeBuffer"),
+						ERDGPassFlags::Compute,
+						ComputeShader,
+						PassParameters,
+						GroupSize);
+				}
+
+				{
+					FBuildProbeVisualizeBufferCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FBuildProbeVisualizeBufferCS::FParameters>();
+					PassParameters->RWProbeVisualizeBufferIndirectArguments = ProbeVisualizeBufferIndirectArgumentsUAV;
+					PassParameters->RWProbeVisualizeBuffer = ProbeVisualizeBufferUAV;
+					PassParameters->View = GetShaderBinding(View.ViewUniformBuffer);
+					PassParameters->VisualizeCommonParameters = VisualizeCommonParameters;
+
+					FBuildProbeVisualizeBufferCS::FPermutationDomain PermutationVector;
+					PermutationVector.Set<FBuildProbeVisualizeBufferCS::FAdaptiveProbes>(RadianceCacheInputs.UseAdaptiveProbes != 0);
+					auto ComputeShader = View.ShaderMap->GetShader<FBuildProbeVisualizeBufferCS>(PermutationVector);
+
+					const FIntVector GroupSize = FComputeShaderUtils::GetGroupCount(FIntVector(RadianceCacheInputs.RadianceProbeClipmapResolution), FBuildProbeVisualizeBufferCS::GetGroupSize());
+
+					FComputeShaderUtils::AddPass(
+						GraphBuilder,
+						RDG_EVENT_NAME("BuildProbeVisualizeBuffer"),
+						ERDGPassFlags::Compute,
+						ComputeShader,
+						PassParameters,
+						GroupSize);
+				}
+
+				const bool bAdaptiveProbes = RadianceCacheInputs.UseAdaptiveProbes != 0;
+				const bool bIrradiance = RadianceCacheInputs.CalculateIrradiance != 0;
+				const bool bSkyVisibility = RadianceCacheInputs.UseSkyVisibility != 0;
+				const int32 VisualizationMode = FMath::Clamp(CVarLumenRadianceCacheVisualize.GetValueOnRenderThread(), 1, 2);
+				FRDGBufferRef ProbeValid = bIrradiance ? GraphBuilder.RegisterExternalBuffer(RadianceCacheState.ProbeValid) : nullptr;
+				const bool bR8BufferSupported = UE::PixelFormat::HasCapabilities(PF_R8_UINT, EPixelFormatCapabilities::TypedUAVLoad) && UE::PixelFormat::HasCapabilities(PF_R8_UINT, EPixelFormatCapabilities::TypedUAVStore);
+
+				FVisualizeRadianceCacheParameters* PassParameters = GraphBuilder.AllocParameters<FVisualizeRadianceCacheParameters>();
+				PassParameters->VS.VisualizeCommonParameters = VisualizeCommonParameters;
+				PassParameters->VS.View = GetShaderBinding(View.ViewUniformBuffer);
+				PassParameters->VS.IndirectDrawParameter = ProbeVisualizeBufferIndirectArguments;
+				PassParameters->VS.ProbeVisualizeBuffer = GraphBuilder.CreateSRV(ProbeVisualizeBuffer, PF_R32G32B32A32_UINT);
+				PassParameters->VS.LastFrameProbeInterpolationMisses = bAdaptiveProbes ? GraphBuilder.CreateSRV(FRDGBufferSRVDesc(GraphBuilder.RegisterExternalBuffer(RadianceCacheState.ProbeInterpolationMisses), PF_R32_UINT)) : nullptr;
+				PassParameters->VS.MaxNumProbes = MaxNumProbes;
+				PassParameters->VS.ProbeAdaptiveIndices = bAdaptiveProbes ? GraphBuilder.CreateSRV(FRDGBufferSRVDesc(GraphBuilder.RegisterExternalBuffer(RadianceCacheState.ProbeAdaptiveIndices), PF_R32_UINT)) : nullptr;
+
+				PassParameters->PS.VisualizeCommonParameters = VisualizeCommonParameters;
+				PassParameters->PS.View = GetShaderBinding(View.ViewUniformBuffer);
+				PassParameters->PS.ProbeAdaptiveIndices = bAdaptiveProbes ? GraphBuilder.CreateSRV(FRDGBufferSRVDesc(GraphBuilder.RegisterExternalBuffer(RadianceCacheState.ProbeAdaptiveIndices), PF_R32_UINT)) : nullptr;
+				PassParameters->PS.ProbeValid = bIrradiance ? GraphBuilder.CreateSRV(FRDGBufferSRVDesc(ProbeValid, bR8BufferSupported ? PF_R8_UINT : PF_R32_UINT)) : nullptr;
+
+				FVisualizeRadianceCacheVS::FPermutationDomain PermutationVectorVS;
+				PermutationVectorVS.Set<FVisualizeRadianceCacheVS::FAdaptiveProbes>(bAdaptiveProbes);
+				auto VertexShader = View.ShaderMap->GetShader<FVisualizeRadianceCacheVS>(PermutationVectorVS);
+
+				FVisualizeRadianceCachePS::FPermutationDomain PermutationVector;
+				PermutationVector.Set<FVisualizeRadianceCachePS::FVisualizeMode>(VisualizationMode);
+				PermutationVector.Set<FVisualizeRadianceCachePS::FRadianceCacheIrradiance>(bIrradiance);
+				PermutationVector.Set<FVisualizeRadianceCachePS::FRadianceCacheSkyVisibility>(bSkyVisibility);
+				PermutationVector.Set<FVisualizeRadianceCachePS::FAdaptiveProbes>(bAdaptiveProbes);
+				PermutationVector = FVisualizeRadianceCachePS::RemapPermutation(PermutationVector);
+				auto PixelShader = View.ShaderMap->GetShader<FVisualizeRadianceCachePS>(PermutationVector);
+
+				PassParameters->RenderTargets.DepthStencil = FDepthStencilBinding(
+					SceneDepth,
+					ERenderTargetLoadAction::ENoAction,
+					ERenderTargetLoadAction::ELoad,
+					FExclusiveDepthStencil::DepthWrite_StencilWrite);
+				PassParameters->RenderTargets[0] = FRenderTargetBinding(SceneColor, ERenderTargetLoadAction::ELoad);
+
+				ClearUnusedGraphResources(VertexShader, &PassParameters->VS);
+				ClearUnusedGraphResources(PixelShader, &PassParameters->PS);
+
+				GraphBuilder.AddPass(
+					RDG_EVENT_NAME("Visualize Radiance Cache Clipmap:%d", ClipmapIndex),
+					PassParameters,
+					ERDGPassFlags::Raster,
+					[PassParameters, &View, VertexShader, PixelShader](FRDGAsyncTask, FRHICommandList& RHICmdList)
+					{
+						RHICmdList.SetViewport(View.ViewRect.Min.X, View.ViewRect.Min.Y, 0.0f, View.ViewRect.Max.X, View.ViewRect.Max.Y, 1.0f);
+
+						FGraphicsPipelineStateInitializer GraphicsPSOInit;
+						RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+						GraphicsPSOInit.BlendState = TStaticBlendState<CW_RGB>::GetRHI();
+						GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
+						GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<true, CF_DepthNear>::GetRHI();
+						GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GEmptyVertexDeclaration.VertexDeclarationRHI;
+						GraphicsPSOInit.BoundShaderState.VertexShaderRHI = VertexShader.GetVertexShader();
+						GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader.GetPixelShader();
+						GraphicsPSOInit.PrimitiveType = PT_TriangleList;
+
+						SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, 0);
+
+						SetShaderParameters(RHICmdList, VertexShader, VertexShader.GetVertexShader(), PassParameters->VS);
+						SetShaderParameters(RHICmdList, PixelShader, PixelShader.GetPixelShader(), PassParameters->PS);
+
+						RHICmdList.SetStreamSource(0, NULL, 0);
+
+						// Marks the indirect draw parameter as used by the pass, given it's not used directly by any of the shaders.
+						//PassParameters->VS.IndirectDrawParameter->MarkResourceAsUsed();
+
+						RHICmdList.DrawIndexedPrimitiveIndirect(
+							GCubeIndexBuffer.IndexBufferRHI,
+							PassParameters->VS.IndirectDrawParameter->GetIndirectRHICallBuffer(),
+							0);
+					});
+			}
 		}
 	}
 }

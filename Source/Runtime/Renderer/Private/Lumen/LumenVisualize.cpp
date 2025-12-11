@@ -874,7 +874,7 @@ void FDeferredShadingSceneRenderer::RenderLumenMiscVisualizations(FRDGBuilder& G
 
 LumenRadianceCache::FRadianceCacheInputs GetFinalGatherRadianceCacheInputsForVisualize(const FViewInfo& View)
 {
-	if (GLumenIrradianceFieldGather)
+	if (Lumen::UseIrradianceFieldGather())
 	{
 		return LumenIrradianceFieldGather::SetupRadianceCacheInputs();
 	}

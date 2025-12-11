@@ -13,14 +13,6 @@
 #include "LumenTracingUtils.h"
 #include "LumenReflections.h"
 
-int32 GLumenIrradianceFieldGather = 0;
-FAutoConsoleVariableRef CVarLumenIrradianceFieldGather(
-	TEXT("r.Lumen.IrradianceFieldGather"),
-	GLumenIrradianceFieldGather,
-	TEXT("Whether to use the Irradiance Field Final Gather, an experimental opaque final gather that interpolates from pre-calculated irradiance in probes for cheaper, but lower quality GI."),
-	ECVF_Scalability | ECVF_RenderThreadSafe
-);
-
 int32 GLumenIrradianceFieldNumClipmaps = 4;
 FAutoConsoleVariableRef CVarLumenIrradianceFieldNumClipmaps(
 	TEXT("r.Lumen.IrradianceFieldGather.NumClipmaps"),
@@ -247,14 +239,15 @@ FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenIrradianceFieldGath
 	FRDGBuilder& GraphBuilder,
 	const FSceneTextures& SceneTextures,
 	const FLumenSceneFrameTemporaries& FrameTemporaries,
+	FRDGTextureRef LightingChannelsTexture,
 	const FViewInfo& View,
+	FLumenScreenSpaceBentNormalParameters& ScreenSpaceBentNormalParameters,
+	FLumenUpsampleParameters& UpsampleParameters,
 	LumenRadianceCache::FRadianceCacheInterpolationParameters& TranslucencyVolumeRadianceCacheParameters,
 	ERDGPassFlags ComputePassFlags)
 {
 	RDG_EVENT_SCOPE_STAT(GraphBuilder, LumenIrradianceFieldGather, "LumenIrradianceFieldGather");
 	RDG_GPU_STAT_SCOPE(GraphBuilder, LumenIrradianceFieldGather);
-
-	check(GLumenIrradianceFieldGather != 0);
 
 	const LumenRadianceCache::FRadianceCacheInputs RadianceCacheInputs = LumenIrradianceFieldGather::SetupRadianceCacheInputs();
 
@@ -311,6 +304,7 @@ FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenIrradianceFieldGath
 		OutputArray,
 		Scene,
 		ViewFamily,
+		SceneTextures,
 		LumenCardRenderer.bPropagateGlobalLightingChange,
 		ComputePassFlags);
 

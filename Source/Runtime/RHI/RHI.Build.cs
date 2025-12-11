@@ -13,7 +13,7 @@ public class RHI : ModuleRules
 		PrivateDependencyModuleNames.Add("ApplicationCore");
 		PrivateDependencyModuleNames.Add("Cbor");
 
-		PublicDefinitions.AddDefinition("WITH_MGPU", Target.Platform.IsInGroup(UnrealPlatformGroup.Windows) && Target.Platform.IsInGroup(UnrealPlatformGroup.Desktop));
+		PublicDefinitions.AddDefinition("WITH_MGPU", false);
 
 		if (Target.bCompileAgainstEngine)
 		{

@@ -304,7 +304,7 @@ bool ShouldRenderLumenDirectLighting(const FScene* Scene, const FSceneView& View
 {
 	return ShouldRenderLumenDiffuseGI(Scene, View)
 		&& GLumenGatherCvars.DirectLighting
-		&& !GLumenIrradianceFieldGather;
+		&& !Lumen::UseIrradianceFieldGather();
 }
 
 bool ShouldRenderAOWithLumenGI()

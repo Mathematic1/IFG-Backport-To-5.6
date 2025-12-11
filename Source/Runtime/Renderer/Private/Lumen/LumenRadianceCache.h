@@ -31,6 +31,9 @@ struct FRadianceCacheConfiguration
 
 namespace LumenRadianceCache
 {
+	// Maximum number of adaptive probes per uniform probe cell. Must match usf
+	const uint32 MaxAdaptiveProbes = 2;
+	
 	template<typename T, uint32 NumInlineElements = 4>
 	class TInlineArray : public TArray<T, TInlineAllocator<NumInlineElements>>
 	{
@@ -108,6 +111,7 @@ namespace LumenRadianceCache
 		TInlineArray<FUpdateOutputs>& OutputArray,
 		const FScene* Scene,
 		const FViewFamilyInfo& ViewFamily,
+		const FSceneTextures& SceneTextures,
 		bool bPropagateGlobalLightingChange,
 		ERDGPassFlags ComputePassFlags = ERDGPassFlags::Compute);
 

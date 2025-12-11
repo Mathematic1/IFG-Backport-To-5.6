@@ -129,6 +129,7 @@ struct FAsyncLumenIndirectLightingOutputs
 		FLumenMeshSDFGridParameters MeshSDFGridParameters;
 		LumenRadianceCache::FRadianceCacheInterpolationParameters RadianceCacheParameters;
 		FLumenScreenSpaceBentNormalParameters ScreenBentNormalParameters;
+		FLumenUpsampleParameters LumenUpsampleParameters;
 	};
 
 	TArray<FViewOutputs, TInlineAllocator<1>> ViewOutputs;
@@ -629,6 +630,7 @@ private:
 	void ComputeLumenTranslucencyGIVolume(
 		FRDGBuilder& GraphBuilder,
 		FViewInfo& View,
+		const FSceneTextures& SceneTextures,
 		const FLumenSceneFrameTemporaries& FrameTemporaries,
 		LumenRadianceCache::FRadianceCacheInterpolationParameters& RadianceCacheParameters,
 		ERDGPassFlags ComputePassFlags);
@@ -718,6 +720,7 @@ private:
 		class FLumenMeshSDFGridParameters& MeshSDFGridParameters,
 		LumenRadianceCache::FRadianceCacheInterpolationParameters& RadianceCacheParameters,
 		class FLumenScreenSpaceBentNormalParameters& ScreenSpaceBentNormalParameters,
+		class FLumenUpsampleParameters& UpsampleParameters,
 		ERDGPassFlags ComputePassFlags);
 
 	FSSDSignalTextures RenderLumenScreenProbeGather(
@@ -752,7 +755,10 @@ private:
 		FRDGBuilder& GraphBuilder,
 		const FSceneTextures& SceneTextures,
 		const FLumenSceneFrameTemporaries& FrameTemporaries,
+		FRDGTextureRef LightingChannelsTexture,
 		const FViewInfo& View,
+		FLumenScreenSpaceBentNormalParameters& ScreenSpaceBentNormalParameters,
+		class FLumenUpsampleParameters& UpsampleParameters,
 		LumenRadianceCache::FRadianceCacheInterpolationParameters& TranslucencyVolumeRadianceCacheParameters,
 		ERDGPassFlags ComputePassFlags);
 
