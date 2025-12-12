@@ -32,6 +32,7 @@ namespace LumenReflections
 		SHADER_PARAMETER(float, MaxRoughnessToTrace)
 		SHADER_PARAMETER(float, MaxRoughnessToTraceForFoliage)
 		SHADER_PARAMETER(float, InvRoughnessFadeLength)
+		SHADER_PARAMETER(float, ReflectionSmoothBias)
 	END_SHADER_PARAMETER_STRUCT()
 
 	void SetupCompositeParameters(const FViewInfo& View, LumenReflections::FCompositeParameters& OutParameters);
@@ -51,7 +52,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FLumenReflectionTracingParameters, )
 	SHADER_PARAMETER(FIntPoint, ReflectionTracingBufferSize)
 	SHADER_PARAMETER(FVector2f, ReflectionTracingBufferInvSize)
 	SHADER_PARAMETER(float, MaxRayIntensity)
-	SHADER_PARAMETER(float, ReflectionSmoothBias)
+	//SHADER_PARAMETER(float, ReflectionSmoothBias)
 	SHADER_PARAMETER(uint32, ReflectionPass)
 	SHADER_PARAMETER(uint32, UseJitter)
 	SHADER_PARAMETER(uint32, UseHighResSurface)

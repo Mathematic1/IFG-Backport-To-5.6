@@ -411,6 +411,7 @@ void LumenReflections::SetupCompositeParameters(const FViewInfo& View, LumenRefl
 	OutParameters.MaxRoughnessToTrace = FMath::Min(View.FinalPostProcessSettings.LumenMaxRoughnessToTraceReflections, CVarLumenReflectionMaxRoughnessToTraceClamp.GetValueOnRenderThread());
 	OutParameters.InvRoughnessFadeLength = 1.0f / FMath::Clamp(GLumenReflectionRoughnessFadeLength, 0.001f, 1.0f);
 	OutParameters.MaxRoughnessToTraceForFoliage = CVarLumenReflectionsMaxRoughnessToTraceForFoliage.GetValueOnRenderThread();
+	OutParameters.ReflectionSmoothBias = GLumenReflectionSmoothBias;
 
 	if (CVarLumenReflectionMaxRoughnessToTrace.GetValueOnRenderThread() >= 0.0f)
 	{
@@ -1178,7 +1179,7 @@ FRDGTextureRef FDeferredShadingSceneRenderer::RenderLumenReflections(
 	ReflectionTracingParameters.ReflectionTracingBufferSize = BufferSize;
 	ReflectionTracingParameters.ReflectionTracingBufferInvSize = FVector2f(1.0f) / BufferSize;
 	ReflectionTracingParameters.MaxRayIntensity = CVarLumenReflectionMaxRayIntensity.GetValueOnRenderThread();
-	ReflectionTracingParameters.ReflectionSmoothBias = GLumenReflectionSmoothBias;
+	//ReflectionTracingParameters.ReflectionSmoothBias = GLumenReflectionSmoothBias;
 	ReflectionTracingParameters.ReflectionPass = (uint32)ReflectionPass;
 	ReflectionTracingParameters.UseJitter = bTemporal ? 1 : 0;
 	ReflectionTracingParameters.UseHighResSurface = CVarLumenReflectionsHiResSurface.GetValueOnRenderThread() != 0 ? 1 : 0;
@@ -1759,7 +1760,7 @@ void FDeferredShadingSceneRenderer::RenderRayTracedTranslucencyView(
 	ReflectionTracingParameters.ReflectionTracingBufferSize = BufferSize;
 	ReflectionTracingParameters.ReflectionTracingBufferInvSize = FVector2f(1.0f) / BufferSize;
 	ReflectionTracingParameters.MaxRayIntensity = CVarRayTracedTranslucencyMaxRayIntensity.GetValueOnRenderThread();
-	ReflectionTracingParameters.ReflectionSmoothBias = GLumenReflectionSmoothBias;
+	//ReflectionTracingParameters.ReflectionSmoothBias = GLumenReflectionSmoothBias;
 	ReflectionTracingParameters.ReflectionPass = (uint32)ELumenReflectionPass::FrontLayerTranslucency;
 	ReflectionTracingParameters.UseJitter = bDenoise && GLumenReflectionTemporalFilter ? 1 : 0;
 	ReflectionTracingParameters.UseHighResSurface = CVarLumenReflectionsHiResSurface.GetValueOnRenderThread() != 0 ? 1 : 0;
