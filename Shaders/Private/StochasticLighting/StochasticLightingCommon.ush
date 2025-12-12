@@ -3,6 +3,9 @@
 
 #include "../Common.ush"
 
+#define LUMEN_INVALID_PACKED_PIXEL_DATA 0x30
+#define MEGALIGHTS_INVALID_PACKED_PIXEL_DATA 0x30
+
 // Used for storing normal and shading info history data and used by:
 // * LumenScreenProbeGather
 // * MegaLightDenoiserTemporal
@@ -35,3 +38,157 @@ FNormalAndShadingInfo UnpackNormalAndShadingInfo(float4 In)
 	Out.bHasBackfaceDiffuse = PackedA & 0x2 ? true : false;
 	return Out;
 }
+
+/** Encodes the reprojection vector into 32bits. */
+uint EncodeReprojectionVector(float2 ReprojectionVector)
+{
+	float2 EncodedScreenVelocity = EncodeVelocityToTexture(float3(ReprojectionVector.xy, 0.0)).xy;
+	
+	float2 UnormEncoding = clamp(EncodedScreenVelocity * 65535.0f + 0.5f, 0.0f, 65535.0f);
+
+	uint EncodedReprojectionVector = 0u;
+	EncodedReprojectionVector |= uint(UnormEncoding.x) <<  0u;
+	EncodedReprojectionVector |= uint(UnormEncoding.y) << 16u;
+	return EncodedReprojectionVector;
+}
+
+/** Inverse of EncodeReprojectionVector() */
+float2 DecodeReprojectionVector(uint EncodedReprojectionVector)
+{
+	float2 UnormEncoding = float2(uint2(EncodedReprojectionVector, EncodedReprojectionVector >> 16u) & 0xFFFFu);
+
+	float2 ReprojectionVector = DecodeVelocityFromTexture(float4(UnormEncoding * rcp(65535.0f), 0.0, 0.0)).xy;
+	return ReprojectionVector;
+}
+
+struct FLumenPackedPixelData
+{
+	uint Packed;
+
+	void SetHistorySampleValidity(bool4 bSampleValid)
+	{
+		for (uint HistoryIndex = 0; HistoryIndex < 4; ++HistoryIndex)
+		{
+			Packed |= bSampleValid[HistoryIndex] ? 1u << HistoryIndex : 0;
+		}
+	}
+
+	bool4 GetHistorySampleValidity()
+	{
+		bool4 bHistoryValid;
+		for (uint HistoryIndex = 0; HistoryIndex < 4; ++HistoryIndex)
+		{
+			bHistoryValid[HistoryIndex] = (Packed & (1u << HistoryIndex)) != 0;
+		}
+		return bHistoryValid;
+	}
+
+	bool AnyHistoryValid()
+	{
+		return (Packed & 0xF) != 0;
+	}
+
+	void SetStochasticSampleOffset(uint2 Offset, bool bCanReconstruct)
+	{
+		if (bCanReconstruct)
+		{
+			Packed |= Offset.x << 4;
+			Packed |= Offset.y << 5;
+			Packed |= 1u << 6;
+		}
+	}
+
+	uint2 GetStochasticSampleOffset()
+	{
+		return select(bool2(Packed & (1u << 4), Packed & (1u << 5)), 1u, 0u);
+	}
+
+	bool HasValidStochasticSample()
+	{
+		return (Packed & (1u << 6)) != 0;
+	}
+
+	void SetHasBackfaceDiffuse(bool bBackfaceDiffuse)
+	{
+		Packed |= bBackfaceDiffuse ? 1u << 7 : 0;
+	}
+
+	bool HasBackfaceDiffuse()
+	{
+		return (Packed & (1u << 7)) != 0;
+	}
+
+	bool IsValid()
+	{
+		return Packed != LUMEN_INVALID_PACKED_PIXEL_DATA;
+	}
+};
+
+struct FMegaLightsPackedPixelData
+{
+	uint Packed;
+
+	void SetHistorySampleValidity(bool4 bSampleValid)
+	{
+		for (uint HistoryIndex = 0; HistoryIndex < 4; ++HistoryIndex)
+		{
+			Packed |= bSampleValid[HistoryIndex] ? 1u << HistoryIndex : 0;
+		}
+	}
+
+	bool4 GetHistorySampleValidity()
+	{
+		bool4 bHistoryValid;
+		for (uint HistoryIndex = 0; HistoryIndex < 4; ++HistoryIndex)
+		{
+			bHistoryValid[HistoryIndex] = (Packed & (1u << HistoryIndex)) != 0;
+		}
+		return bHistoryValid;
+	}
+
+	bool AnyHistoryValid()
+	{
+		return (Packed & 0xF) != 0;
+	}
+
+	void SetStochasticSampleOffset(uint2 Offset, bool bCanReconstruct)
+	{
+		if (bCanReconstruct)
+		{
+			Packed |= Offset.x << 4;
+			Packed |= Offset.y << 5;
+			Packed |= 1u << 6;
+		}
+	}
+
+	uint2 GetStochasticSampleOffset()
+	{
+		return select(bool2(Packed & (1u << 4), Packed & (1u << 5)), 1u, 0u);
+	}
+
+	int2 GetStochasticSampleOffset(int2 SampleOffsets[4])
+	{
+		uint SampleOffsetIndex = BitFieldExtractU32(Packed, 2, 4);
+		return SampleOffsets[SampleOffsetIndex];
+	}
+
+	bool HasValidStochasticSample()
+	{
+		return (Packed & (1u << 6)) != 0;
+	}
+
+	void SetAnyHistoryDepthValid(bool bAnyValid)
+	{
+		Packed |= bAnyValid ? 1u << 7 : 0;
+	}
+
+	bool AnyHistoryDepthValid()
+	{
+		return (Packed & (1u << 7)) != 0;
+	}
+
+	bool IsValid()
+	{
+		return Packed != MEGALIGHTS_INVALID_PACKED_PIXEL_DATA;
+	}
+};

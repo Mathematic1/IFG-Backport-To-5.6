@@ -213,11 +213,11 @@ void DownsampleDepthAndNormal(
 	if (all(Jitter == ScreenCoord % DownsampleFactor))
 	{
 		RWDownsampledDepth[DownsampledScreenCoord] = Material.IsValid() ? Material.SceneDepth : -1.0f;
-		RWDownsampledNormal[DownsampledScreenCoord] = EncodeNormal(Material.WorldNormalForPositionBias);
+		RWDownsampledNormal[DownsampledScreenCoord] = EncodeNormal(Material.WorldNormal);
 
 		uint2 SharedCoord = GroupThreadId / DownsampleFactor + TileBorder;
 		StoreDepthToCache(SharedCoord, DownsampleFactor, Material.IsValid() ? Material.SceneDepth : -1.0f);
-		StoreNormalToCache(SharedCoord, DownsampleFactor, Material.WorldNormalForPositionBias);
+		StoreNormalToCache(SharedCoord, DownsampleFactor, Material.WorldNormal);
 	}
 
 	const uint NumBorderPixels = (TileSize.x + TileSize.y - TileBorder * 2) * TileBorder * 2;
@@ -254,7 +254,7 @@ void DownsampleDepthAndNormal(
 			FLumenMaterialData BorderMaterial = ReadMaterialData(BorderCoord, MaxRoughnessToTrace);
 
 			BorderDepth = BorderMaterial.IsValid() ? BorderMaterial.SceneDepth : -1.0f;
-			BorderNormal = BorderMaterial.WorldNormalForPositionBias;
+			BorderNormal = BorderMaterial.WorldNormal;
 		}
 
 		StoreDepthToCache(BorderSharedCoord, DownsampleFactor, BorderDepth);
@@ -332,7 +332,7 @@ float4 ComputeUpsampleWeights(uint2 GroupThreadId, uint2 ScreenCoord, float2 Scr
 
 	float4 DepthWeights = 1.0f;	
 	{
-		float4 ScenePlane = float4(Material.WorldNormalForPositionBias, dot(TranslatedWorldPosition, Material.WorldNormalForPositionBias));
+		float4 ScenePlane = float4(Material.WorldNormal, dot(TranslatedWorldPosition, Material.WorldNormal));
 
 		float2 ScreenPosition00 = ScreenPosition + SampleScreenOffset00 * View.BufferSizeAndInvSize.zw / View.ScreenPositionScaleBias.xy;
 		float2 ScreenPosition10 = ScreenPosition + SampleScreenOffset10 * View.BufferSizeAndInvSize.zw / View.ScreenPositionScaleBias.xy;
@@ -363,10 +363,10 @@ float4 ComputeUpsampleWeights(uint2 GroupThreadId, uint2 ScreenCoord, float2 Scr
 		float3 SampleWorldNormal01 = LoadNormalFromCache(SharedCoord00 + SampleOffsets[2], DownsampleFactor);
 		float3 SampleWorldNormal11 = LoadNormalFromCache(SharedCoord00 + SampleOffsets[3], DownsampleFactor);
 
-		NormalWeights.x = GetNormalWeight(Material.WorldNormalForPositionBias, SampleWorldNormal00);
-		NormalWeights.y = GetNormalWeight(Material.WorldNormalForPositionBias, SampleWorldNormal10);
-		NormalWeights.z = GetNormalWeight(Material.WorldNormalForPositionBias, SampleWorldNormal01);
-		NormalWeights.w = GetNormalWeight(Material.WorldNormalForPositionBias, SampleWorldNormal11);
+		NormalWeights.x = GetNormalWeight(Material.WorldNormal, SampleWorldNormal00);
+		NormalWeights.y = GetNormalWeight(Material.WorldNormal, SampleWorldNormal10);
+		NormalWeights.z = GetNormalWeight(Material.WorldNormal, SampleWorldNormal01);
+		NormalWeights.w = GetNormalWeight(Material.WorldNormal, SampleWorldNormal11);
 	}
 	UpsampleWeights *= NormalWeights;
 
@@ -431,7 +431,7 @@ void StochasticLightingTileClassificationMarkCS(
 		RWDepthTexture[Coord.SvPosition] = ConvertToDeviceZ(Material.SceneDepth);
 
 		FNormalAndShadingInfo Info;
-		Info.Normal = Material.WorldNormalForPositionBias;
+		Info.Normal = Material.WorldNormal;
 		Info.bIsHair = Material.bIsHair;
 		Info.bHasBackfaceDiffuse = Material.bHasBackfaceDiffuse;
 		RWNormalTexture[Coord.SvPosition] = PackNormalAndShadingInfo(Info);
@@ -711,7 +711,7 @@ void StochasticLightingTileClassificationMarkCS(
 
 				#if PLANE_DISOCCLUSION_WEIGHTS
 					float3 PrevTranslatedPrevWorldPosition = mul(float4(GetScreenPositionForProjectionType(HistoryScreenPosition.xy, ReprojectedSceneDepth), ReprojectedSceneDepth, 1), View.PrevScreenToTranslatedWorld).xyz;
-					float4 PrevTranslatedPrevScenePlane = float4(Material.WorldNormalForPositionBias, dot(PrevTranslatedPrevWorldPosition, Material.WorldNormalForPositionBias));
+					float4 PrevTranslatedPrevScenePlane = float4(Material.WorldNormal, dot(PrevTranslatedPrevWorldPosition, Material.WorldNormalForPositionBias));
 
 					float2 HistoryGatherUV00 = HistoryGatherUV + HistoryBufferSizeAndInvSize.zw * float2(-0.5, -0.5);
 					float2 HistoryGatherUV10 = HistoryGatherUV + HistoryBufferSizeAndInvSize.zw * float2(+0.5, -0.5);
@@ -746,7 +746,7 @@ void StochasticLightingTileClassificationMarkCS(
 					const float3 V = normalize(-TranslatedWorldPosition);
 					// Raise the threshold at grazing angles to compensate for TAA jitter causing a depth mismatch dependent on the angle
 					// This also introduces some ghosting around characters, needs a better solution
-					LumenDisocclusionDistanceThreshold /= clamp(saturate(dot(V, Material.WorldNormalForPositionBias)), 0.1f, 1.0f); 
+					LumenDisocclusionDistanceThreshold /= clamp(saturate(dot(V, Material.WorldNormal)), 0.1f, 1.0f); 
 				#endif
 					LumenDepthWeights = select(DistanceToHistoryValue >= ReprojectedSceneDepth * LumenDisocclusionDistanceThreshold, half(0.0), half(1.0));
 				}
@@ -779,10 +779,10 @@ void StochasticLightingTileClassificationMarkCS(
 					const float3 HistoryNormal11 = UnpackNormalAndShadingInfo(float4(NormalR.w, NormalG.w, NormalB.w, 0)).Normal;
 
 					const float4 HistoryNormalWeights = select(float4(
-						dot(HistoryNormal00, Material.WorldNormalForPositionBias),
-						dot(HistoryNormal10, Material.WorldNormalForPositionBias),
-						dot(HistoryNormal01, Material.WorldNormalForPositionBias),
-						dot(HistoryNormal11, Material.WorldNormalForPositionBias)) < LumenHistoryNormalCosThreshold, half(0.0), half(1.0));
+						dot(HistoryNormal00, Material.WorldNormal),
+						dot(HistoryNormal10, Material.WorldNormal),
+						dot(HistoryNormal01, Material.WorldNormal),
+						dot(HistoryNormal11, Material.WorldNormal)) < LumenHistoryNormalCosThreshold, half(0.0), half(1.0));
 
 					LumenHistoryWeights *= HistoryNormalWeights;
 				}
