@@ -147,6 +147,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FLumenScreenSpaceBentNormalParameters, )
 	SHADER_PARAMETER(FIntPoint, ShortRangeAOViewMin)
 	SHADER_PARAMETER(FIntPoint, ShortRangeAOViewSize)
 	SHADER_PARAMETER(uint32, ShortRangeAOMode)
+	SHADER_PARAMETER(uint32, ShortRangeAODownsampleFactor)
 END_SHADER_PARAMETER_STRUCT()
 
 BEGIN_SHADER_PARAMETER_STRUCT(FLumenUpsampleParameters, )

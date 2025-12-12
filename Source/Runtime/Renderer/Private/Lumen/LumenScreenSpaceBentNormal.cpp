@@ -362,5 +362,6 @@ FLumenScreenSpaceBentNormalParameters ComputeScreenSpaceShortRangeAO(
 
 	OutParameters.ShortRangeAOTexture = ShortRangeAO;
 	OutParameters.ShortRangeAOMode = LumenShortRangeAO::UseBentNormal() ? 2 : 1;
+	OutParameters.ShortRangeAODownsampleFactor = DownsampleFactor;
 	return OutParameters;
 }
