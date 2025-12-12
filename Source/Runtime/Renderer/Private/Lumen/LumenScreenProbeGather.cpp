@@ -402,12 +402,17 @@ namespace LumenScreenProbeGather
 
 		return StateFrameIndex;
 	}
+	
+	uint32 GetRequestedIntegrateDownsampleFactor()
+	{
+		return FMath::Clamp(CVarLumenScreenProbeIntegrateDownsampleFactor.GetValueOnAnyThread(), 1, 2);
+	}
 
 	uint32 GetIntegrateDownsampleFactor(const FViewInfo& View)
 	{
-		// For now downsampling is only supported on a specific rendering path
-		if (LumenShortRangeAO::ShouldApplyDuringIntegration()
-			|| GLumenScreenProbeIntegrationTileClassification == 0
+		uint32 IntegrateDownsampleFactor = GetRequestedIntegrateDownsampleFactor();
+
+		if (GLumenScreenProbeIntegrationTileClassification == 0
 			// For now, we don't support ScreenProbeGather integrate downsample factor !=1.
 			// Substrate overflow tiles are randomly scatter (i.e.,  not grouped in 2x2 8px-Tile), which causes a lot of complication. 
 			// * Classification: this can be handled by loading 4 8x8-subtile to mark correctly the type of integration. 
@@ -418,7 +423,20 @@ namespace LumenScreenProbeGather
 			return 1;
 		}
 
-		return FMath::Clamp(CVarLumenScreenProbeIntegrateDownsampleFactor.GetValueOnAnyThread(), 1, 2);
+		// For now downsampling is only supported on a specific rendering path
+		if (UseShortRangeAmbientOcclusion(View.Family->EngineShowFlags)
+			&& LumenShortRangeAO::ShouldApplyDuringIntegration()
+			&& LumenShortRangeAO::GetRequestedDownsampleFactor() != IntegrateDownsampleFactor)
+		{
+			return 1;
+		}
+
+		return IntegrateDownsampleFactor;
+	}
+	
+	bool IsUsingDownsampledDepthAndNormal(const FViewInfo& View)
+	{
+		return GetIntegrateDownsampleFactor(View) != 1 || LumenShortRangeAO::GetDownsampleFactor() != 1;
 	}
 
 	int32 GetTracingOctahedronResolution(const FViewInfo& View)
@@ -545,6 +563,16 @@ namespace LumenScreenProbeGather
 	}
 }
 
+void LumenScreenProbeGather::SetupTileClassifyParameters(const FViewInfo& View, LumenScreenProbeGather::FTileClassifyParameters& OutParameters)
+{
+	OutParameters.DefaultDiffuseIntegrationMethod = (uint32)GetDiffuseIntegralMethod();
+	OutParameters.MaxRoughnessToEvaluateRoughSpecular = GVarLumenScreenProbeMaxRoughnessToEvaluateRoughSpecular.GetValueOnRenderThread();
+	OutParameters.MaxRoughnessToEvaluateRoughSpecularForFoliage = GVarLumenScreenProbeMaxRoughnessToEvaluateRoughSpecularForFoliage.GetValueOnRenderThread();
+	OutParameters.LumenHistoryDistanceThreshold = CVarLumenScreenProbeHistoryDistanceThreshold.GetValueOnRenderThread();
+	OutParameters.LumenHistoryDistanceThresholdForFoliage = CVarLumenScreenProbeHistoryDistanceThresholdForFoliage.GetValueOnRenderThread();
+	OutParameters.LumenHistoryNormalCosThreshold = FMath::Cos(GLumenScreenProbeTemporalHistoryNormalThreshold * (float)PI / 180.0f);
+}
+
 bool LumenScreenProbeGather::UseRejectBasedOnNormal()
 {
 	return GLumenScreenProbeGather != 0
@@ -627,6 +655,13 @@ FAutoConsoleVariableRef CVarRadianceCacheProbeReprojectionRadiusScale(
 	GRadianceCacheReprojectionRadiusScale,
 	TEXT(""),
 	ECVF_RenderThreadSafe
+);
+
+static TAutoConsoleVariable<int32> CVarRadianceCacheNumFramesToKeepCachedProbes(
+	TEXT("r.Lumen.ScreenProbeGather.RadianceCache.NumFramesToKeepCachedProbes"),
+	8,
+	TEXT("Number of frames to keep unused probes in cache. Higher values enable more reuse between frames, but too high values will cause filtering from stale probes."),
+	ECVF_Scalability | ECVF_RenderThreadSafe
 );
 
 int32 GRadianceCacheStats = 0;
@@ -712,6 +747,8 @@ namespace LumenScreenProbeGatherRadianceCache
 		Parameters.NumProbesToTraceBudget = FMath::RoundToInt(CVarRadianceCacheNumProbesToTraceBudget.GetValueOnRenderThread() * LightingUpdateSpeed * EditingBudgetScale);
 		Parameters.RadianceCacheStats = GRadianceCacheStats;
 		Parameters.UseSkyVisibility = LumenScreenProbeGather::UseRadianceCacheSkyVisibility() ? 1 : 0;
+		// We need to keep radiance cache probes for many frames since they are only placed on screen probes which are jittered, to avoid invalidating the cache constantly
+		Parameters.NumFramesToKeepCachedProbes = CVarRadianceCacheNumFramesToKeepCachedProbes.GetValueOnRenderThread();
 		return Parameters;
 	}
 };
@@ -2079,6 +2116,15 @@ static void HairStrandsMarkUsedProbes(
 
 DECLARE_GPU_STAT(LumenScreenProbeGather);
 
+namespace Lumen
+{
+	bool IsUsingDownsampledDepthAndNormal(const FViewInfo& View)
+	{
+		return GetFinalGatherMethod(*View.Family, View.GetShaderPlatform()) == ELumenFinalGatherMethod::IrradianceFieldGather
+			? LumenIrradianceFieldGather::IsUsingDownsampledDepthAndNormal(View)
+			: LumenScreenProbeGather::IsUsingDownsampledDepthAndNormal(View);
+	}
+}
 
 FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenFinalGather(
 	FRDGBuilder& GraphBuilder,

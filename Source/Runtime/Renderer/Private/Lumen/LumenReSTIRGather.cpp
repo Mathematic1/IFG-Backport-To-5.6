@@ -961,10 +961,10 @@ FSSDSignalTextures FDeferredShadingSceneRenderer::RenderLumenReSTIRGather(
 	ReSTIRParameters.UAVs = CreateReservoirUAVs(GraphBuilder, ReSTIRParameters.Textures);
 	
 	FRDGTextureDesc DownsampledSceneDepthDesc(FRDGTextureDesc::Create2D(ReservoirBufferSize, PF_R32_FLOAT, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
-	ReSTIRParameters.DownsampledSceneDepth = FrameTemporaries.DownsampledSceneDepth.CreateSharedRT(GraphBuilder, DownsampledSceneDepthDesc, ReservoirViewExtent, TEXT("Lumen.ReSTIRGather.DownsampledSceneDepth"));
+	//ReSTIRParameters.DownsampledSceneDepth = FrameTemporaries.DownsampledSceneDepth.CreateSharedRT(GraphBuilder, DownsampledSceneDepthDesc, ReservoirViewExtent, TEXT("Lumen.ReSTIRGather.DownsampledSceneDepth"));
 
 	FRDGTextureDesc DownsampledWorldNormalDesc(FRDGTextureDesc::Create2D(ReservoirBufferSize, PF_A2B10G10R10, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV));
-	ReSTIRParameters.DownsampledWorldNormal = FrameTemporaries.DownsampledWorldNormal.CreateSharedRT(GraphBuilder, DownsampledWorldNormalDesc, ReservoirViewExtent, TEXT("Lumen.ReSTIRGather.DownsampledWorldNormal"));
+	//ReSTIRParameters.DownsampledWorldNormal = FrameTemporaries.DownsampledWorldNormal.CreateSharedRT(GraphBuilder, DownsampledWorldNormalDesc, ReservoirViewExtent, TEXT("Lumen.ReSTIRGather.DownsampledWorldNormal"));
 
 	FBlueNoise BlueNoise = GetBlueNoiseGlobalParameters();
 	ReSTIRParameters.BlueNoise = CreateUniformBufferImmediate(BlueNoise, EUniformBufferUsage::UniformBuffer_SingleFrame);

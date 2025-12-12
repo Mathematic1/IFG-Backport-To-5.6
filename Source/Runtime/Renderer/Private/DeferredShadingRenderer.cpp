@@ -2967,9 +2967,6 @@ void FDeferredShadingSceneRenderer::Render(FRDGBuilder& GraphBuilder, const FSce
 					SortedLightSet);
 			}
 
-			// Copy depth history without water and translucency for ray traced lighting denoising
-			StoreStochasticLightingSceneHistory(GraphBuilder, LumenFrameTemporaries, SceneTextures);
-
 			RenderTranslucencyLightingVolume(GraphBuilder, TranslucencyLightingVolumeTextures, SortedLightSet);
 
 			// Do DiffuseIndirectComposite after Lights so that async Lumen work can overlap
@@ -3601,7 +3598,7 @@ void FDeferredShadingSceneRenderer::Render(FRDGBuilder& GraphBuilder, const FSce
 		}
 
 		// After AddPostProcessingPasses in case of Lumen Visualizations writing to feedback
-		FinishGatheringLumenSurfaceCacheFeedback(GraphBuilder, Views[0], LumenFrameTemporaries);
+		FinishGatheringLumenSurfaceCacheFeedback(GraphBuilder, Views[0], LumenFrameTemporaries, SceneTextures);
 
 #if RHI_RAYTRACING
 		RayTracingScene.PostRender(GraphBuilder);

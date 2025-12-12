@@ -32,18 +32,31 @@ enum class EScreenProbeIrradianceFormat : uint8
 
 namespace LumenScreenProbeGather 
 {
+	BEGIN_SHADER_PARAMETER_STRUCT(FTileClassifyParameters, )
+	SHADER_PARAMETER(uint32, DefaultDiffuseIntegrationMethod)
+	SHADER_PARAMETER(float, MaxRoughnessToEvaluateRoughSpecular)
+	SHADER_PARAMETER(float, MaxRoughnessToEvaluateRoughSpecularForFoliage)
+	SHADER_PARAMETER(float, LumenHistoryDistanceThreshold)
+	SHADER_PARAMETER(float, LumenHistoryDistanceThresholdForFoliage)
+	SHADER_PARAMETER(float, LumenHistoryNormalCosThreshold)
+END_SHADER_PARAMETER_STRUCT()
+	
 	extern int32 GetTracingOctahedronResolution(const FViewInfo& View);
 	extern int32 IsProbeTracingResolutionSupportedForImportanceSampling(int32 TracingResolution);
 	extern bool UseImportanceSampling(const FViewInfo& View);
 	extern bool UseProbeSpatialFilter();
 	extern bool UseProbeTemporalFilter();
 	extern bool UseRadianceCache();
+	bool UseShortRangeAmbientOcclusion(const FEngineShowFlags& ShowFlags);
 	bool UseRadianceCacheSkyVisibility();
 	bool UseRejectBasedOnNormal();
 	EScreenProbeIrradianceFormat GetScreenProbeIrradianceFormat(const FEngineShowFlags& ShowFlags);
 	bool UseScreenProbeExtraAO();
 	bool UseHitLighting(const FViewInfo& View, EDiffuseIndirectMethod DiffuseIndirectMethod);
 	uint32 GetStateFrameIndex(const FSceneViewState* ViewState);
+	uint32 GetRequestedIntegrateDownsampleFactor();
+	void SetupTileClassifyParameters(const FViewInfo& View, LumenScreenProbeGather::FTileClassifyParameters& OutParameters);
+	bool IsUsingDownsampledDepthAndNormal(const FViewInfo& View);
 
 	// Must match LumenScreenProbeCommon.ush
 	constexpr uint32 IrradianceProbeRes = 6;

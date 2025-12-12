@@ -209,6 +209,13 @@ namespace LumenIrradianceFieldGather
 	LumenRadianceCache::FRadianceCacheInputs SetupRadianceCacheInputs();
 }
 
+namespace LumenIrradianceFieldGather
+{
+	LumenRadianceCache::FRadianceCacheInputs SetupRadianceCacheInputs();
+	bool IsUsingDownsampledDepthAndNormal(const FViewInfo& View);
+}
+
+
 namespace LumenDiffuseIndirect
 {
 	bool IsAllowed();

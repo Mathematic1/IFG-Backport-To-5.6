@@ -430,7 +430,7 @@ void FDeferredShadingSceneRenderer::BeginGatheringLumenSurfaceCacheFeedback(FRDG
 	}
 }
 
-void FDeferredShadingSceneRenderer::FinishGatheringLumenSurfaceCacheFeedback(FRDGBuilder& GraphBuilder, const FViewInfo& View, FLumenSceneFrameTemporaries& FrameTemporaries)
+void FDeferredShadingSceneRenderer::FinishGatheringLumenSurfaceCacheFeedback(FRDGBuilder& GraphBuilder, const FViewInfo& View, FLumenSceneFrameTemporaries& FrameTemporaries, const FMinimalSceneTextures& SceneTextures)
 {
 	const FPerViewPipelineState& ViewPipelineState = GetViewPipelineState(View);
 	const bool bLumenActive = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen || ViewPipelineState.ReflectionsMethod == EReflectionsMethod::Lumen;
@@ -479,5 +479,5 @@ void FDeferredShadingSceneRenderer::FinishGatheringLumenSurfaceCacheFeedback(FRD
 		}
 	}
 
-	QueueExtractStochasticLighting(GraphBuilder, FrameTemporaries);
+	QueueExtractStochasticLighting(GraphBuilder, FrameTemporaries, SceneTextures);
 }

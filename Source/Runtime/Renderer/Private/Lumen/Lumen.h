@@ -76,6 +76,7 @@ namespace Lumen
 
 	bool ShouldUpdateLumenSceneViewOrigin();
 	FVector GetLumenSceneViewOrigin(const FViewInfo& View, int32 ClipmapIndex);
+	bool IsUsingDownsampledDepthAndNormal(const FViewInfo& View);
 
 	// Global Distance Field
 	int32 GetGlobalDFResolution();

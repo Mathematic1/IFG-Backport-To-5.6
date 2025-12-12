@@ -32,6 +32,7 @@
 #include "Lumen/LumenSceneLighting.h"
 #include "Lumen/LumenReflections.h"
 #include "MegaLights/MegaLights.h"
+#include "Lumen/LumenShortRangeAO.h"
 
 // This is the project default dynamic global illumination, NOT the scalability setting (see r.Lumen.DiffuseIndirect.Allow for scalability)
 // Must match EDynamicGlobalIlluminationMethod
@@ -1368,8 +1369,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 			PSParameters->bLumenSupportBackfaceDiffuse = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen && DenoiserOutputs.Textures[1] != SystemTextures.Black;
 			PSParameters->bLumenReflectionInputIsSSR = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen && ViewPipelineState.ReflectionsMethod == EReflectionsMethod::SSR;
 			PSParameters->LumenGIDownsampleFactor = LumenUpsampleParameters.DownsampleFactor;
-			extern float GLumenShortRangeAOFoliageOcclusionStrength;
-			PSParameters->LumenFoliageOcclusionStrength = GLumenShortRangeAOFoliageOcclusionStrength;
+			PSParameters->LumenFoliageOcclusionStrength = LumenShortRangeAO::GetFoliageOcclusionStrength();
 			extern float GLumenMaxShortRangeAOMultibounceAlbedo;
 			PSParameters->LumenMaxAOMultibounceAlbedo = GLumenMaxShortRangeAOMultibounceAlbedo;
 			PSParameters->LumenReflectionSpecularScale = GetLumenReflectionSpecularScale();

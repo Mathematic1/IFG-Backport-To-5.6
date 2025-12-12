@@ -12,6 +12,8 @@ namespace LumenShortRangeAO
 	bool UseBentNormal();
 	EPixelFormat GetTextureFormat();
 	uint32 GetDownsampleFactor();
+	uint32 GetRequestedDownsampleFactor();
 	bool UseTemporal();
 	float GetTemporalNeighborhoodClampScale();
+	float GetFoliageOcclusionStrength();
 };

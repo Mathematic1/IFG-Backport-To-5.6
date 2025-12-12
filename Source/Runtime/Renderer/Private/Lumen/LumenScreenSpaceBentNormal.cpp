@@ -45,10 +45,9 @@ FAutoConsoleVariableRef CVarLumenShortRangeAOSlopeCompareToleranceScale(
 	ECVF_Scalability | ECVF_RenderThreadSafe
 );
 
-float GLumenShortRangeAOFoliageOcclusionStrength = .7f;
-FAutoConsoleVariableRef CVarLumenShortRangeAOFoliageOcclusionStrength(
-	TEXT("r.Lumen.ScreenProbeGather.ShortRangeAO.ScreenSpace.FoliageOcclusionStrength"),
-	GLumenShortRangeAOFoliageOcclusionStrength,
+static TAutoConsoleVariable<float> CVarLumenShortRangeAOFoliageOcclusionStrength(
+	TEXT("r.Lumen.ScreenProbeGather.ShortRangeAO.FoliageOcclusionStrength"),
+	0.7f,
 	TEXT("Maximum strength of ScreenSpaceBentNormal occlusion on foliage and subsurface pixels.  Useful for reducing max occlusion to simulate subsurface scattering."),
 	ECVF_Scalability | ECVF_RenderThreadSafe
 );
@@ -101,14 +100,26 @@ namespace LumenShortRangeAO
 		return LumenShortRangeAO::UseBentNormal() ? PF_R32_UINT : PF_R8;
 	}
 
+	uint32 GetRequestedDownsampleFactor()
+	{
+		return FMath::Clamp(CVarLumenShortRangeAODownsampleFactor.GetValueOnAnyThread(), 1, 2);
+	}
+	
 	uint32 GetDownsampleFactor()
 	{
-		if (ShouldApplyDuringIntegration() || !UseTemporal())
+		uint32 DownsampleFactor = GetRequestedDownsampleFactor();
+
+		if (ShouldApplyDuringIntegration() && LumenScreenProbeGather::GetRequestedIntegrateDownsampleFactor() != DownsampleFactor)
+		{
+			return 1;
+		}
+		
+		if (!ShouldApplyDuringIntegration() && !UseTemporal())
 		{
 			return 1;
 		}
 
-		return FMath::Clamp(CVarLumenShortRangeAODownsampleFactor.GetValueOnRenderThread(), 1, 2);
+		return DownsampleFactor;
 	}
 
 	bool UseTemporal()
@@ -119,6 +130,11 @@ namespace LumenShortRangeAO
 	float GetTemporalNeighborhoodClampScale()
 	{
 		return CVarLumenShortRangeAOTemporalNeighborhoodClampScale.GetValueOnRenderThread();
+	}
+	
+	float GetFoliageOcclusionStrength()
+	{
+		return FMath::Clamp(CVarLumenShortRangeAOFoliageOcclusionStrength.GetValueOnRenderThread(), 0.0f, 1.0f);
 	}
 }
 

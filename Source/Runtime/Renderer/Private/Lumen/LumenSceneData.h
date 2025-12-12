@@ -943,6 +943,13 @@ struct FLumenSceneFrameTemporaries
 	FLumenSharedRT ReservoirWeights;
 	FLumenSharedRT DownsampledSceneDepth;
 	FLumenSharedRT DownsampledWorldNormal;
+	
+	FLumenSharedRT LumenTileBitmask;
+	FLumenSharedRT MegaLightsTileBitmask;
+
+	FLumenSharedRT EncodedReprojectionVector;
+	FLumenSharedRT LumenPackedPixelData;
+	FLumenSharedRT MegaLightsPackedPixelData;
 
 	// Optional debug data enabled with stats visualization
 	// Contains cursor point cards information
