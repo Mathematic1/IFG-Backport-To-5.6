@@ -17,6 +17,7 @@
 #include "LumenReflections.h"
 #include "LumenShortRangeAO.h"
 #include "ShaderPrintParameters.h"
+#include "../StochasticLighting/StochasticLighting.h"
 
 extern FLumenGatherCvarState GLumenGatherCvars;
 
@@ -1225,22 +1226,17 @@ class FScreenProbeTemporalReprojectionCS : public FGlobalShader
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2DArray, RoughSpecularIndirectHistory)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2DArray, ShortRangeAOHistory)
 		SHADER_PARAMETER_RDG_TEXTURE(Texture2DArray, HistoryFastUpdateMode_NumFramesAccumulated)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, DiffuseIndirectDepthHistory)
-		SHADER_PARAMETER_RDG_TEXTURE(Texture2D, DiffuseIndirectNormalHistory)
-		SHADER_PARAMETER(float, HistoryDistanceThreshold)
-		SHADER_PARAMETER(float, HistoryDistanceThresholdForFoliage)
-		SHADER_PARAMETER(float,PrevSceneColorPreExposureCorrection)
-		SHADER_PARAMETER(float,InvFractionOfLightingMovingForFastUpdateMode)
-		SHADER_PARAMETER(float,MaxFastUpdateModeAmount)
-		SHADER_PARAMETER(float,MaxFramesAccumulated)
-		SHADER_PARAMETER(float,HistoryNormalCosThreshold)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2D<uint>, EncodedReprojectionVectorTexture)
+		SHADER_PARAMETER_RDG_TEXTURE(Texture2DArray<uint>, PackedPixelDataTexture)
+		SHADER_PARAMETER(float, PrevSceneColorPreExposureCorrection)
+		SHADER_PARAMETER(float, InvFractionOfLightingMovingForFastUpdateMode)
+		SHADER_PARAMETER(float, MaxFastUpdateModeAmount)
+		SHADER_PARAMETER(float, MaxFramesAccumulated)
 		SHADER_PARAMETER(FIntPoint, ShortRangeAOViewMin)
 		SHADER_PARAMETER(FIntPoint, ShortRangeAOViewSize)
 		SHADER_PARAMETER(float, ShortRangeAOTemporalNeighborhoodClampScale)
 		SHADER_PARAMETER(FVector4f,HistoryScreenPositionScaleBias)
-		SHADER_PARAMETER(FVector4f,HistoryUVToScreenPositionScaleBias)
 		SHADER_PARAMETER(FVector4f,HistoryUVMinMax)
-		SHADER_PARAMETER(FIntVector4,HistoryViewportMinMax)
 		SHADER_PARAMETER(FVector4f, HistoryBufferSizeAndInvSize)
 		SHADER_PARAMETER(FVector3f, TargetFormatQuantizationError)
 		SHADER_PARAMETER(uint32, bIsSubstrateTileHistoryValid)
@@ -1253,23 +1249,22 @@ class FScreenProbeTemporalReprojectionCS : public FGlobalShader
 	END_SHADER_PARAMETER_STRUCT()
 
 	class FValidHistory : SHADER_PERMUTATION_BOOL("VALID_HISTORY");
-	class FHistoryRejectBasedOnNormal : SHADER_PERMUTATION_BOOL("HISTORY_REJECT_BASED_ON_NORMAL");
 	class FFastUpdateModeNeighborhoodClamp : SHADER_PERMUTATION_BOOL("FAST_UPDATE_MODE_NEIGHBORHOOD_CLAMP");
 	class FOverflowTile : SHADER_PERMUTATION_BOOL("PERMUTATION_OVERFLOW_TILE");
 	class FSupportBackfaceDiffuse : SHADER_PERMUTATION_BOOL("SUPPORT_BACKFACE_DIFFUSE");
 	class FIntegrateDownsampleFactor : SHADER_PERMUTATION_RANGE_INT("INTEGRATE_DOWNSAMPLE_FACTOR", 1, 2);
 	class FShortRangeAOMode : SHADER_PERMUTATION_RANGE_INT("SHORT_RANGE_AO_MODE", 0, 3);
 	class FShortRangeAODownsampleFactor : SHADER_PERMUTATION_RANGE_INT("SHORT_RANGE_AO_DOWNSAMPLE_FACTOR", 1, 2);
-	using FPermutationDomain = TShaderPermutationDomain<FValidHistory, FFastUpdateModeNeighborhoodClamp, FHistoryRejectBasedOnNormal, FOverflowTile, FSupportBackfaceDiffuse, FIntegrateDownsampleFactor, FShortRangeAOMode, FShortRangeAODownsampleFactor>;
+	using FPermutationDomain = TShaderPermutationDomain<FValidHistory, FFastUpdateModeNeighborhoodClamp, FOverflowTile, FSupportBackfaceDiffuse, FIntegrateDownsampleFactor, FShortRangeAOMode, FShortRangeAODownsampleFactor>;
 
-	static FPermutationDomain RemapPermutation(FPermutationDomain PermutationVector)
+	static FPermutationDomain RemapPermutation(FPermutationDomain PermutationVector, EShaderPlatform ShaderPlatform)
 	{
 		if (PermutationVector.Get<FShortRangeAOMode>() == 0)
 		{
 			PermutationVector.Set<FShortRangeAODownsampleFactor>(1);
 		}
 
-		if (!Substrate::IsSubstrateEnabled())
+		if (!Lumen::SupportsMultipleClosureEvaluation(ShaderPlatform))
 		{
 			PermutationVector.Set<FOverflowTile>(false);
 		}
@@ -1280,7 +1275,7 @@ class FScreenProbeTemporalReprojectionCS : public FGlobalShader
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
-		if (RemapPermutation(PermutationVector) != PermutationVector)
+		if (RemapPermutation(PermutationVector, Parameters.Platform) != PermutationVector)
 		{
 			return false;
 		}
@@ -1306,6 +1301,11 @@ class FScreenProbeTemporalReprojectionCS : public FGlobalShader
 	{
 		FGlobalShader::ModifyCompilationEnvironment(Parameters, OutEnvironment);
 		OutEnvironment.SetDefine(TEXT("THREADGROUP_SIZE"), GetGroupSize());
+
+		if (FDataDrivenShaderPlatformInfo::GetSupportsRealTypes(Parameters.Platform) == ERHIFeatureSupport::RuntimeGuaranteed)
+		{
+			OutEnvironment.CompilerFlags.Add(CFLAG_AllowRealTypes);
+		}
 	}
 };
 
@@ -1813,6 +1813,7 @@ void UpdateHistoryScreenProbeGather(
 	FRDGTextureRef OldRoughSpecularIndirectHistory = nullptr;
 	FRDGTextureRef OldFastUpdateMode_NumFramesAccumulatedHistory = nullptr;
 	FRDGTextureRef OldShortRangeAOHistory = nullptr;
+	FRDGTextureRef OldShortRangeGIHistory = nullptr;
 
 	// Load last frame's history
 	if (View.ViewState)
@@ -1848,7 +1849,8 @@ void UpdateHistoryScreenProbeGather(
 		}
 	}
 
-	const bool bRejectBasedOnNormal = LumenScreenProbeGather::UseRejectBasedOnNormal() && OldNormalHistory;
+	FRDGTextureRef EncodedReprojectionVector = FrameTemporaries.EncodedReprojectionVector.GetRenderTarget();
+	FRDGTextureRef PackedPixelData = FrameTemporaries.LumenPackedPixelData.GetRenderTarget();
 	
 	// If the scene render targets reallocate, toss the history so we don't read uninitialized data
 	const FIntPoint EffectiveResolution = Substrate::GetSubstrateTextureResolution(View, SceneTextures.Config.Extent);
@@ -1881,6 +1883,8 @@ void UpdateHistoryScreenProbeGather(
 	FRDGTextureUAVRef RWNewHistoryRoughSpecularIndirect = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(NewRoughSpecularIndirect), ERDGUnorderedAccessViewFlags::SkipBarrier);
 	FRDGTextureUAVRef RWHistoryFastUpdateMode_NumFramesAccumulated = GraphBuilder.CreateUAV(FRDGTextureUAVDesc(NewHistoryFastUpdateMode_NumFramesAccumulated), ERDGUnorderedAccessViewFlags::SkipBarrier);
 	FRDGTextureUAVRef RWNewShortRangeAO = NewShortRangeAO ? GraphBuilder.CreateUAV(FRDGTextureUAVDesc(NewShortRangeAO), ERDGUnorderedAccessViewFlags::SkipBarrier) : nullptr;
+	
+	const bool bSupportShortRangeAOBentNormalInTemporal = LumenShortRangeAO::UseBentNormal() && !LumenShortRangeAO::ShouldApplyDuringIntegration();
 
 	auto ScreenProbeTemporalReprojection = [&](bool bOverflow)
 	{
@@ -1888,12 +1892,11 @@ void UpdateHistoryScreenProbeGather(
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FValidHistory >(OldDiffuseIndirectHistory != nullptr && OldDepthHistory != nullptr);
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FOverflowTile>(bOverflow);
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FFastUpdateModeNeighborhoodClamp>(GLumenScreenProbeTemporalFastUpdateModeUseNeighborhoodClamp != 0);
-		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FHistoryRejectBasedOnNormal>(bRejectBasedOnNormal);
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FSupportBackfaceDiffuse >(bSupportBackfaceDiffuse);
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FIntegrateDownsampleFactor >(LumenScreenProbeGather::GetIntegrateDownsampleFactor(View));
-		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FShortRangeAOMode >(bSupportShortRangeAO ? (LumenShortRangeAO::UseBentNormal() ? 2 : 1) : 0);
+		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FShortRangeAOMode >(bSupportShortRangeAO ? (bSupportShortRangeAOBentNormalInTemporal ? 2 : 1) : 0);
 		PermutationVector.Set< FScreenProbeTemporalReprojectionCS::FShortRangeAODownsampleFactor >(LumenShortRangeAO::GetDownsampleFactor());
-		PermutationVector = FScreenProbeTemporalReprojectionCS::RemapPermutation(PermutationVector);
+		PermutationVector = FScreenProbeTemporalReprojectionCS::RemapPermutation(PermutationVector, View.GetShaderPlatform());
 		auto ComputeShader = View.ShaderMap->GetShader<FScreenProbeTemporalReprojectionCS>(PermutationVector);
 
 		FScreenProbeTemporalReprojectionCS::FParameters* PassParameters = GraphBuilder.AllocParameters<FScreenProbeTemporalReprojectionCS::FParameters>();
@@ -1915,12 +1918,10 @@ void UpdateHistoryScreenProbeGather(
 		PassParameters->RoughSpecularIndirectHistory = OldRoughSpecularIndirectHistory;
 		PassParameters->HistoryFastUpdateMode_NumFramesAccumulated = OldFastUpdateMode_NumFramesAccumulatedHistory;
 		PassParameters->ShortRangeAOTexture = ScreenSpaceBentNormalParameters.ShortRangeAOTexture;
-		PassParameters->DiffuseIndirectDepthHistory = OldDepthHistory;
-		PassParameters->DiffuseIndirectNormalHistory = OldNormalHistory;
 		PassParameters->ShortRangeAOHistory = OldShortRangeAOHistory;
+		PassParameters->EncodedReprojectionVectorTexture = EncodedReprojectionVector;
+		PassParameters->PackedPixelDataTexture = PackedPixelData;
 
-		PassParameters->HistoryDistanceThreshold = CVarLumenScreenProbeHistoryDistanceThreshold.GetValueOnRenderThread();
-		PassParameters->HistoryDistanceThresholdForFoliage = CVarLumenScreenProbeHistoryDistanceThresholdForFoliage.GetValueOnRenderThread();
 		PassParameters->PrevSceneColorPreExposureCorrection = View.PreExposure / View.PrevViewInfo.SceneColorPreExposure;
 		PassParameters->InvFractionOfLightingMovingForFastUpdateMode = 1.0f / FMath::Max(GLumenScreenProbeFractionOfLightingMovingForFastUpdateMode, .001f);
 		PassParameters->MaxFastUpdateModeAmount = GLumenScreenProbeTemporalMaxFastUpdateModeAmount;
@@ -1933,12 +1934,10 @@ void UpdateHistoryScreenProbeGather(
 		const float MaxFramesAccumulatedScale = 1.0f / FMath::Sqrt(FMath::Clamp(View.FinalPostProcessSettings.LumenFinalGatherLightingUpdateSpeed, .5f, 8.0f));
 		const float EditingScale = View.Family->bCurrentlyBeingEdited ? .5f : 1.0f;
 		PassParameters->MaxFramesAccumulated = FMath::RoundToInt(GLumenScreenProbeTemporalMaxFramesAccumulated * MaxFramesAccumulatedScale * EditingScale);
-		PassParameters->HistoryNormalCosThreshold = FMath::Cos(GLumenScreenProbeTemporalHistoryNormalThreshold * (float)PI / 180.0f);
 		PassParameters->HistoryScreenPositionScaleBias = DiffuseIndirectHistoryScreenPositionScaleBias;
 
 		const FVector2f HistoryUVToScreenPositionScale(1.0f / PassParameters->HistoryScreenPositionScaleBias.X, 1.0f / PassParameters->HistoryScreenPositionScaleBias.Y);
 		const FVector2f HistoryUVToScreenPositionBias = -FVector2f(PassParameters->HistoryScreenPositionScaleBias.W, PassParameters->HistoryScreenPositionScaleBias.Z) * HistoryUVToScreenPositionScale;
-		PassParameters->HistoryUVToScreenPositionScaleBias = FVector4f(HistoryUVToScreenPositionScale, HistoryUVToScreenPositionBias);
 
 		// Pull in the max UV to exclude the region which will read outside the viewport due to bilinear filtering
 		PassParameters->HistoryUVMinMax = FVector4f(
@@ -1946,12 +1945,6 @@ void UpdateHistoryScreenProbeGather(
 			(DiffuseIndirectHistoryViewRect.Min.Y + 0.5f) * HistoryBufferSizeAndInvSize.W,
 			(DiffuseIndirectHistoryViewRect.Max.X - 1.0f) * HistoryBufferSizeAndInvSize.Z,
 			(DiffuseIndirectHistoryViewRect.Max.Y - 1.0f) * HistoryBufferSizeAndInvSize.W);
-
-		PassParameters->HistoryViewportMinMax = FIntVector4(
-			DiffuseIndirectHistoryViewRect.Min.X,
-			DiffuseIndirectHistoryViewRect.Min.Y,
-			DiffuseIndirectHistoryViewRect.Max.X,
-			DiffuseIndirectHistoryViewRect.Max.Y);
 
 		PassParameters->HistoryBufferSizeAndInvSize = HistoryBufferSizeAndInvSize;
 		PassParameters->DiffuseIndirect = DiffuseIndirect;

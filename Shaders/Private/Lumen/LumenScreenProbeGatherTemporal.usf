@@ -17,6 +17,8 @@
 // Float R11G11B10 max
 #define INVALID_LIGHTING float3(65024.0f, 65024.0f, 64512.0f)
 
+#define SHORT_RANGE_GI 0
+
 #if SHORT_RANGE_AO_MODE == 2
 
 // Denoise direction and AO separately for higher quality
@@ -81,19 +83,16 @@ RWTexture2DArray<float3> RWNewHistoryBackfaceDiffuseIndirect;
 RWTexture2DArray<float3> RWNewHistoryRoughSpecularIndirect;
 RWTexture2DArray<UNORM float> RWNewHistoryFastUpdateMode_NumFramesAccumulated;
 RWTexture2DArray<TShortRangeAOPackedWrite> RWNewHistoryShortRangeAO;
-RWTexture2DArray<float3> RWNewHistoryShortRangeGI;
 
 Texture2DArray DiffuseIndirect;
 Texture2DArray LightIsMoving;
 Texture2DArray BackfaceDiffuseIndirect;
 Texture2DArray RoughSpecularIndirect;
 Texture2DArray<TShortRangeAOPacked> ShortRangeAOTexture;
-Texture2DArray ShortRangeGI;
 Texture2DArray DiffuseIndirectHistory;
 Texture2DArray BackfaceDiffuseIndirectHistory;
 Texture2DArray RoughSpecularIndirectHistory;
 Texture2DArray<TShortRangeAOPacked> ShortRangeAOHistory;
-Texture2DArray<float3> ShortRangeGIHistory;
 Texture2DArray HistoryFastUpdateMode_NumFramesAccumulated;
 
 Texture2D<uint> EncodedReprojectionVectorTexture;
