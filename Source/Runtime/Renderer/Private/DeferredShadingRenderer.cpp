@@ -2717,6 +2717,20 @@ void FDeferredShadingSceneRenderer::Render(FRDGBuilder& GraphBuilder, const FSce
 			Substrate::AddSubstrateDBufferPass(GraphBuilder, SceneTextures, DBufferTextures, Views);
 			Substrate::AddSubstrateSampleMaterialPass(GraphBuilder, Scene, SceneTextures, Views);
 		}
+		
+		FAsyncLumenIndirectLightingOutputs AsyncLumenIndirectLightingOutputs;
+		
+		if (!bHasRayTracedOverlay && RequiresStochasticLightingPass())
+		{
+			// Decals may modify GBuffers so they need to be done first. Can decals read velocities and/or custom depth? If so, they need to be rendered earlier too.
+			CompositionLighting.ProcessAfterBasePass(GraphBuilder, InstanceCullingManager, FCompositionLighting::EProcessAfterBasePassMode::OnlyBeforeLightingDecals, Scene->SubstrateSceneData);
+			AsyncLumenIndirectLightingOutputs.bHasDrawnBeforeLightingDecals = true;
+
+			RDG_EVENT_SCOPE_STAT(GraphBuilder, RenderDeferredLighting, "StochasticLighting");
+			RDG_GPU_STAT_SCOPE(GraphBuilder, RenderDeferredLighting);
+
+			StochasticLightingTileClassificationMark(GraphBuilder, LumenFrameTemporaries, SceneTextures);
+		}
 
 		// Copy lighting channels out of stencil before deferred decals which overwrite those values
 		TArray<FRDGTextureRef, TInlineAllocator<2>> NaniteShadingMask;
@@ -2735,8 +2749,6 @@ void FDeferredShadingSceneRenderer::Render(FRDGBuilder& GraphBuilder, const FSce
 		{
 			SingleLayerWaterPrePassResult = RenderSingleLayerWaterDepthPrepass(GraphBuilder, Views, SceneTextures, SingleLayerWaterPrepassLocation, NaniteRasterResults);
 		}
-
-		FAsyncLumenIndirectLightingOutputs AsyncLumenIndirectLightingOutputs;
 
 		GraphBuilder.FlushSetupQueue();
 
