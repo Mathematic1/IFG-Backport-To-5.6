@@ -70,10 +70,8 @@ uint LumenStochasticSampleMode;
 	#endif
 #endif
 
-RWTexture2D<float> RWDownsampledSceneDepth2x1;
-RWTexture2D<float> RWDownsampledSceneDepth2x2;
-RWTexture2D<UNORM float3> RWDownsampledWorldNormal2x1;
-RWTexture2D<UNORM float3> RWDownsampledWorldNormal2x2;
+RWTexture2D<float> RWDownsampledSceneDepth;
+RWTexture2D<UNORM float3> RWDownsampledWorldNormal;
 
 groupshared float SharedSceneDepth2x1[6][10];
 groupshared uint SharedEncodedNormal2x1[6][10];
@@ -441,11 +439,7 @@ void StochasticLightingTileClassificationMarkCS(
 	if (Coord.ClosureIndex == 0)
 	{
 	#if (STOCHASTIC_SAMPLE_OFFSET & STOCHASTIC_SAMPLE_OFFSET_2x2) != 0
-		DownsampleDepthAndNormal(GroupId, GroupThreadId, Coord.SvPosition, Material, uint2(2, 2), RWDownsampledSceneDepth2x2, RWDownsampledWorldNormal2x2);
-	#endif
-
-	#if (STOCHASTIC_SAMPLE_OFFSET & STOCHASTIC_SAMPLE_OFFSET_2x1) != 0
-		DownsampleDepthAndNormal(GroupId, GroupThreadId, Coord.SvPosition, Material, uint2(2, 1), RWDownsampledSceneDepth2x1, RWDownsampledWorldNormal2x1);
+		DownsampleDepthAndNormal(GroupId, GroupThreadId, Coord.SvPosition, Material, uint2(2, 2), RWDownsampledSceneDepth, RWDownsampledWorldNormal);
 	#endif
 	}
 
