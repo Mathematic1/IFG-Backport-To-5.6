@@ -257,13 +257,19 @@ uint64 FRadianceCacheState::GetGPUSizeBytes(bool bLogSizes) const
 		GetRenderTargetGPUSizeBytes(FinalSkyVisibilityAtlas, bLogSizes) +
 		GetRenderTargetGPUSizeBytes(FinalIrradianceAtlas, bLogSizes) +
 		GetRenderTargetGPUSizeBytes(ProbeOcclusionAtlas, bLogSizes) +
+		GetRenderTargetGPUSizeBytes(BlendedIrradianceAtlas, bLogSizes) +
+		GetRenderTargetGPUSizeBytes(BlendedOcclusionAtlas, bLogSizes) +
 		GetRenderTargetGPUSizeBytes(DepthProbeAtlasTexture, bLogSizes) +
+		GetBufferGPUSizeBytes(BlendedProbeWorldOffset, bLogSizes) +
 		GetBufferGPUSizeBytes(ProbeAllocator, bLogSizes) +
 		GetBufferGPUSizeBytes(ProbeFreeListAllocator, bLogSizes) +
 		GetBufferGPUSizeBytes(ProbeFreeList, bLogSizes) +
 		GetBufferGPUSizeBytes(ProbeLastUsedFrame, bLogSizes) +
+		GetBufferGPUSizeBytes(ProbeCreatedFrame, bLogSizes) +
 		GetBufferGPUSizeBytes(ProbeLastTracedFrame, bLogSizes) +
-		GetBufferGPUSizeBytes(ProbeWorldOffset, bLogSizes);
+		GetBufferGPUSizeBytes(ProbeWorldOffset, bLogSizes) +
+		GetBufferGPUSizeBytes(ProbeInterpolationMisses, bLogSizes) +
+		GetBufferGPUSizeBytes(ProbeAdaptiveIndices, bLogSizes);
 }
 
 uint64 FLumenViewState::GetGPUSizeBytes(bool bLogSizes) const

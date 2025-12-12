@@ -121,14 +121,15 @@ class FDiffuseIndirectCompositePS : public FGlobalShader
 	SHADER_USE_PARAMETER_STRUCT(FDiffuseIndirectCompositePS, FGlobalShader)
 
 	class FApplyDiffuseIndirectDim : SHADER_PERMUTATION_INT("DIM_APPLY_DIFFUSE_INDIRECT", 3);
-	class FUpscaleDiffuseIndirectDim : SHADER_PERMUTATION_BOOL("DIM_UPSCALE_DIFFUSE_INDIRECT");
+	class FUpscaleSSGIDim : SHADER_PERMUTATION_BOOL("DIM_UPSCALE_SSGI");
 	class FScreenBentNormalMode : SHADER_PERMUTATION_RANGE_INT("DIM_SCREEN_BENT_NORMAL_MODE", 0, 3);
+	class FUpscaleLumenGIDim : SHADER_PERMUTATION_BOOL("DIM_UPSCALE_LUMEN_GI");
 	class FSubstrateTileType : SHADER_PERMUTATION_INT("SUBSTRATE_TILETYPE", 4);
 	class FEnableDualSrcBlending : SHADER_PERMUTATION_BOOL("ENABLE_DUAL_SRC_BLENDING");
 	class FHairComplexTransmittance : SHADER_PERMUTATION_BOOL("USE_HAIR_COMPLEX_TRANSMITTANCE");
 	class FScreenSpaceReflectionTiledComposition : SHADER_PERMUTATION_BOOL("SSR_TILED_COMPOSITION");
 
-	using FPermutationDomain = TShaderPermutationDomain<FApplyDiffuseIndirectDim, FUpscaleDiffuseIndirectDim, FScreenBentNormalMode, FSubstrateTileType, FEnableDualSrcBlending, FScreenSpaceReflectionTiledComposition, FHairComplexTransmittance>;
+	using FPermutationDomain = TShaderPermutationDomain<FApplyDiffuseIndirectDim, FUpscaleSSGIDim, FScreenBentNormalMode, FUpscaleLumenGIDim, FSubstrateTileType, FEnableDualSrcBlending, FScreenSpaceReflectionTiledComposition, FHairComplexTransmittance>;
 
 	static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
 	{
@@ -140,13 +141,14 @@ class FDiffuseIndirectCompositePS : public FGlobalShader
 		FPermutationDomain PermutationVector(Parameters.PermutationId);
 
 		// Only upscale SSGI
-		if (PermutationVector.Get<FApplyDiffuseIndirectDim>() != 1 && PermutationVector.Get<FUpscaleDiffuseIndirectDim>())
+		if (PermutationVector.Get<FApplyDiffuseIndirectDim>() != 1 && PermutationVector.Get<FUpscaleSSGIDim>())
 		{
 			return false;
 		}
 
-		// Only support Bent Normal for ScreenProbeGather
-		if (PermutationVector.Get<FApplyDiffuseIndirectDim>() != 2 && PermutationVector.Get<FScreenBentNormalMode>() != 0)
+		// Lumen-only permutations
+		if (PermutationVector.Get<FApplyDiffuseIndirectDim>() != 2
+			&& (PermutationVector.Get<FScreenBentNormalMode>() != 0 || PermutationVector.Get<FUpscaleLumenGIDim>()))
 		{
 			return false;
 		}
@@ -160,13 +162,29 @@ class FDiffuseIndirectCompositePS : public FGlobalShader
 		return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
 	}
 
+	static EShaderPermutationPrecacheRequest ShouldPrecachePermutation(const FGlobalShaderPermutationParameters& Parameters)
+	{
+		FPermutationDomain PermutationVector(Parameters.PermutationId);
+
+		// Other final gathers should upscale in their temporal filter
+		if (PermutationVector.Get<FUpscaleLumenGIDim>() != Lumen::UseIrradianceFieldGather())
+		{
+			return EShaderPermutationPrecacheRequest::NotUsed;
+		}
+
+		return EShaderPermutationPrecacheRequest::Precached;
+	}
+
 	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
 		SHADER_PARAMETER(float, AmbientOcclusionStaticFraction)
 		SHADER_PARAMETER(int32, bVisualizeDiffuseIndirect)
 		SHADER_PARAMETER_STRUCT_INCLUDE(LumenReflections::FCompositeParameters, ReflectionsCompositeParameters)
 		SHADER_PARAMETER_STRUCT_INCLUDE(FLumenScreenSpaceBentNormalParameters, ScreenBentNormalParameters)
+		SHADER_PARAMETER_STRUCT_INCLUDE(FLumenUpsampleParameters, LumenUpsampleParameters)
+		SHADER_PARAMETER_STRUCT_REF(FBlueNoise, BlueNoise)
 		SHADER_PARAMETER(uint32, bLumenSupportBackfaceDiffuse)
 		SHADER_PARAMETER(uint32, bLumenReflectionInputIsSSR)
+		SHADER_PARAMETER(uint32, LumenGIDownsampleFactor)
 		SHADER_PARAMETER(float, LumenFoliageOcclusionStrength)
 		SHADER_PARAMETER(float, LumenMaxAOMultibounceAlbedo)
 		SHADER_PARAMETER(float, LumenReflectionSpecularScale)
@@ -1141,6 +1159,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 				MeshSDFGridParameters = ViewOutputs.MeshSDFGridParameters;
 				RadianceCacheParameters = ViewOutputs.RadianceCacheParameters;
 				ScreenBentNormalParameters = ViewOutputs.ScreenBentNormalParameters;
+				LumenUpsampleParameters = ViewOutputs.LumenUpsampleParameters;
 			}
 		}
 		else if (ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Plugin)
@@ -1342,8 +1361,13 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 			PSParameters->EyeAdaptation = GraphBuilder.CreateSRV(GetEyeAdaptationBuffer(GraphBuilder, View));
 			LumenReflections::SetupCompositeParameters(View, PSParameters->ReflectionsCompositeParameters);
 			PSParameters->ScreenBentNormalParameters = ScreenBentNormalParameters;
+			PSParameters->LumenUpsampleParameters = LumenUpsampleParameters;
+			FBlueNoise BlueNoise = GetBlueNoiseGlobalParameters();
+			TUniformBufferRef<FBlueNoise> BlueNoiseUniformBuffer = CreateUniformBufferImmediate(BlueNoise, EUniformBufferUsage::UniformBuffer_SingleDraw);
+			PSParameters->BlueNoise = BlueNoiseUniformBuffer;
 			PSParameters->bLumenSupportBackfaceDiffuse = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen && DenoiserOutputs.Textures[1] != SystemTextures.Black;
 			PSParameters->bLumenReflectionInputIsSSR = ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Lumen && ViewPipelineState.ReflectionsMethod == EReflectionsMethod::SSR;
+			PSParameters->LumenGIDownsampleFactor = LumenUpsampleParameters.DownsampleFactor;
 			extern float GLumenShortRangeAOFoliageOcclusionStrength;
 			PSParameters->LumenFoliageOcclusionStrength = GLumenShortRangeAOFoliageOcclusionStrength;
 			extern float GLumenMaxShortRangeAOMultibounceAlbedo;
@@ -1424,6 +1448,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 				{
 					PermutationVector.Set<FDiffuseIndirectCompositePS::FApplyDiffuseIndirectDim>(2);
 					PermutationVector.Set<FDiffuseIndirectCompositePS::FScreenBentNormalMode>(ScreenBentNormalParameters.ShortRangeAOMode);
+					PermutationVector.Set<FDiffuseIndirectCompositePS::FUpscaleLumenGIDim>(LumenUpsampleParameters.DownsampleFactor != 1);
 
 					if (Substrate::IsSubstrateEnabled() && TileType != ESubstrateTileType::ECount)
 					{
@@ -1439,7 +1464,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 					bUpscale = DenoiserOutputs.Textures[0]->Desc.Extent != SceneColorTexture->Desc.Extent;
 				}
 
-				PermutationVector.Set<FDiffuseIndirectCompositePS::FUpscaleDiffuseIndirectDim>(bUpscale);
+				PermutationVector.Set<FDiffuseIndirectCompositePS::FUpscaleSSGIDim>(bUpscale);
 			}
 
 			PermutationVector.Set<FDiffuseIndirectCompositePS::FEnableDualSrcBlending>(!bEnableCopyPass);
@@ -1488,7 +1513,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 				// only use depth bound optimization when diffuse indirect is disable
 				bool bUseDepthBounds = CVarDiffuseIndirectOffUseDepthBoundsAO.GetValueOnRenderThread() &&
 										bool(ERHIZBuffer::IsInverted) && // Inverted depth buffer is assumed when setting depth bounds test for AO.
-										!PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleDiffuseIndirectDim>() && 
+										!PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleSSGIDim>() &&
 										AmbientOcclusionMask &&
 										ViewPipelineState.DiffuseIndirectMethod == EDiffuseIndirectMethod::Disabled;
 
@@ -1502,7 +1527,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 					RDG_EVENT_NAME(
 						"DiffuseIndirectComposite(DiffuseIndirect=%s%s%s) %dx%d",
 						DiffuseIndirectSampling,
-						PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleDiffuseIndirectDim>() ? TEXT(" UpscaleDiffuseIndirect") : TEXT(""),
+						PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleSSGIDim>() ? TEXT(" UpscaleDiffuseIndirect") : TEXT(""),
 						AmbientOcclusionMask ? TEXT(" ApplyAOToSceneColor") : TEXT(""),
 						View.ViewRect.Width(), View.ViewRect.Height()), 
 					PSParameters,
@@ -1564,7 +1589,7 @@ void FDeferredShadingSceneRenderer::RenderDiffuseIndirectAndAmbientOcclusion(
 					RDG_EVENT_NAME(
 						"DiffuseIndirectComposite(%s%s%s)(%s) %dx%d",
 						DiffuseIndirectSampling,
-						PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleDiffuseIndirectDim>() ? TEXT(" UpscaleDiffuseIndirect") : TEXT(""),
+						PermutationVector.Get<FDiffuseIndirectCompositePS::FUpscaleSSGIDim>() ? TEXT(" UpscaleDiffuseIndirect") : TEXT(""),
 						AmbientOcclusionMask ? TEXT(" ApplyAOToSceneColor") : TEXT(""),
 						ToString(TileType),
 						View.ViewRect.Width(), View.ViewRect.Height()),
@@ -1986,6 +2011,8 @@ void FDeferredShadingSceneRenderer::RenderDeferredReflectionsAndSkyLighting(
 	{
 		return;
 	}
+
+	RDG_EVENT_SCOPE(GraphBuilder, "DiffuseIndirectAndAO");
 
 	// The specular sky light contribution is also needed by RT Reflections as a fallback.
 	const bool bSkyLight = Scene->SkyLight

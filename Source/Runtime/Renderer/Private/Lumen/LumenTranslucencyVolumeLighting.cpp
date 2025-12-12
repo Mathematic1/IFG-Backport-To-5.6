@@ -317,7 +317,7 @@ namespace LumenTranslucencyVolumeRadianceCache
 		// For translucent probes, we want to trace as close to the center as possible to get better GI in translucent and volumetric fog. Note that GLumenDiffuseMinTraceDistance is still applied.
 		// So we reduce the probe TMin to a tiny value in order for the GI to better connect. Only done when TraceFromVolume is off since this one is connecting properly.
 		Parameters.ProbeTMinScale = CVarLumenTranslucencyVolumeTraceFromVolume.GetValueOnRenderThread() != 0 ? 1 : 0.1;
-
+		Parameters.NumFramesToKeepCachedProbes = 8;
 		return Parameters;
 	}
 };
@@ -366,6 +366,7 @@ FLumenTranslucencyLightingParameters GetLumenTranslucencyLightingParameters(
 	Parameters.RadianceCacheInterpolationParameters.RadianceCacheFinalSkyVisibilityAtlas = OrDefault2dTextureIfNull(GraphBuilder, Parameters.RadianceCacheInterpolationParameters.RadianceCacheFinalSkyVisibilityAtlas);
 	Parameters.RadianceCacheInterpolationParameters.RadianceCacheFinalIrradianceAtlas = OrDefault2dTextureIfNull(GraphBuilder, Parameters.RadianceCacheInterpolationParameters.RadianceCacheFinalIrradianceAtlas);
 	Parameters.RadianceCacheInterpolationParameters.RadianceCacheProbeOcclusionAtlas = OrDefault2dTextureIfNull(GraphBuilder, Parameters.RadianceCacheInterpolationParameters.RadianceCacheProbeOcclusionAtlas);
+	Parameters.RadianceCacheInterpolationParameters.RadianceCacheProbeValidAtlas = OrDefault2dTextureIfNull(GraphBuilder, Parameters.RadianceCacheInterpolationParameters.RadianceCacheProbeValidAtlas);
 	Parameters.RadianceCacheInterpolationParameters.RadianceCacheDepthAtlas = OrDefault2dTextureIfNull(GraphBuilder, Parameters.RadianceCacheInterpolationParameters.RadianceCacheDepthAtlas);
 	
 	if (!Parameters.RadianceCacheInterpolationParameters.ProbeWorldOffset)
