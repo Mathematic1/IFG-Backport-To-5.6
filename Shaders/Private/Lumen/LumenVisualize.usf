@@ -59,7 +59,7 @@ void VisualizeQuadsCS(
 	bool bCoveredByRadianceCache = false;
 
 #if RADIANCE_CACHE
-	FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(DFHackToFloat(PrimaryView.WorldCameraOrigin), CameraVector, .5f);
+	FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(PrimaryView.TranslatedWorldCameraOrigin, CameraVector, .5f);
 				
 	if (Coverage.bValid)
 	{
@@ -120,7 +120,7 @@ void VisualizeQuadsCS(
 #endif
 
 #if RADIANCE_CACHE
-	TraceResult.Lighting += SampleRadianceCacheInterpolated(Coverage, DFHackToFloat(PrimaryView.WorldCameraOrigin), CameraVector, ConeAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance * TraceResult.Transparency;
+	TraceResult.Lighting += SampleRadianceCacheInterpolated(Coverage, PrimaryView.TranslatedWorldCameraOrigin, CameraVector, ConeAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance * TraceResult.Transparency;
 	TraceResult.Transparency = 0.0f;
 #else
 	ApplySkylightToTraceResult(CameraVector, TraceResult);

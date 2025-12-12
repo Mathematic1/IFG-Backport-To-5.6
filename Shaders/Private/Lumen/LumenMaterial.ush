@@ -238,6 +238,10 @@ struct FLumenMaterialData
 	uint   DiffuseIndirectSampleOcclusion;
 	bool   bNeedsSeparateLightAccumulation; 
 	bool   bRequiresBxDFImportanceSampling;
+	bool   bIsValid;
+	bool   bIsSimple;
+	bool   bIsSingle;
+	bool   bIsComplexSpecial;
 	bool   bIsSLW;
 	bool   bIsHair;
 	bool   bHasBackfaceDiffuse;
@@ -246,7 +250,6 @@ struct FLumenMaterialData
 	float  Anisotropy;
 
 #if SUBTRATE_GBUFFER_FORMAT==1
-	bool bIsValid;
 	bool bHasSecondSpecularLobe;
 	bool bHasBottomNormal;
 	float2 BottomNormalOct;
@@ -255,6 +258,26 @@ struct FLumenMaterialData
 #elif !FRONT_LAYER_TRANSLUCENCY
 	FGBufferData GBufferData;
 #endif
+
+	bool IsValid()
+	{
+		return bIsValid;
+	}
+
+	bool IsSimple()
+	{
+		return bIsSimple;
+	}
+
+	bool IsSingle()
+	{
+		return bIsSingle;
+	}
+
+	bool IsComplexSpecial()
+	{
+		return bIsComplexSpecial;
+	}
 };
 
 // Note: must match SampleBxDFWrapper

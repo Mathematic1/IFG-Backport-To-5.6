@@ -2,6 +2,30 @@
 
 #pragma once
 
+uint StochasticLightingStateFrameIndex;
+
+uint2 GetDownsampleJitter2x1(uint2 DownsampledScreenCoord)
+{
+	// Checkerboarding
+	uint2 Jitter;
+	Jitter.x = (DownsampledScreenCoord.y + StochasticLightingStateFrameIndex) % 2;
+	Jitter.y = 0;
+	return Jitter;
+}
+
+uint2 GetDownsampleJitter2x2(uint2 DownsampledScreenCoord)
+{
+	uint2 CellIndex = DownsampledScreenCoord % 2;
+	uint LinearIndex = CellIndex.x + CellIndex.y * 2;
+	LinearIndex = (LinearIndex + StochasticLightingStateFrameIndex) % 4;
+
+	// 4-rooks sampling pattern
+	uint2 Jitter;
+	Jitter.x = LinearIndex & 0x02 ? 1 : 0;
+	Jitter.y = LinearIndex & 0x01 ? 0 : 1;
+	return Jitter;
+}
+
 uint2 GetStochasticBilinearOffset(float RandomScalar, float4 UpsampleWeights, int2 SampleOffsets[4])
 {
 	int2 StochasticBilinearOffset = 0;

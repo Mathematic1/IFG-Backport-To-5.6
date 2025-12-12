@@ -8,17 +8,17 @@
 
 #include "LumenRadianceCacheInterpolation.ush"
 
-FRadianceCacheCoverage GetRadianceCacheCoverageWithUncertainCoverage(float3 RayOrigin, float3 RayDirection, float ClipmapDitherRandom)
+FRadianceCacheCoverage GetRadianceCacheCoverageWithUncertainCoverage(float3 TranslatedRayOrigin, float3 RayDirection, float ClipmapDitherRandom)
 {
 	FRadianceCacheCoverage Coverage;
 	Coverage.bValid = false;
 	Coverage.MinTraceDistanceBeforeInterpolation = 10000000.0f;
 
-	uint ClipmapIndex = GetRadianceProbeClipmap(RayOrigin, ClipmapDitherRandom);
+	uint ClipmapIndex = GetRadianceProbeClipmap(TranslatedRayOrigin, ClipmapDitherRandom);
 
 	if (ClipmapIndex < NumRadianceProbeClipmaps)
 	{
-		float3 ProbeCoordFloat = GetRadianceProbeCoordFloat(RayOrigin, ClipmapIndex);
+		float3 ProbeCoordFloat = GetRadianceProbeCoordFloat(TranslatedRayOrigin, ClipmapIndex);
 		float3 CornerProbeCoordFloat = ProbeCoordFloat - .5f;
 		int3 CornerProbeCoord = floor(CornerProbeCoordFloat);
 		Coverage.bValid = true;
@@ -33,9 +33,9 @@ FRadianceCacheCoverage GetRadianceCacheCoverageWithUncertainCoverage(float3 RayO
 				for (int X = 0; X < 2; X++)
 				{
 					int3 ProbeCoord = CornerProbeCoord + int3(X, Y, Z);
-					uint ProbeIndex = GetProbeIndexFromIndirectionTexture(ProbeCoord, ClipmapIndex);
+					FProbeIndirectionDesc ProbeIndirection = GetProbeIndirection(ProbeCoord, ClipmapIndex);
 
-					if (ProbeIndex == INVALID_PROBE_INDEX)
+					if (!ProbeIndirection.bValid)
 					{
 						Coverage.bValid = false;
 					}

@@ -470,7 +470,7 @@ half3 GetImageBasedReflectionSpecular(FMaterialPixelParameters MaterialParameter
 	if (FinalProbeResolution > 0 && !bUseLumenFrontLayerReflection)
 	{
 		float ClipmapDitherRandom = InterleavedGradientNoise(MaterialParameters.SvPosition.xy, View.StateFrameIndexMod8);
-		LumenRadianceCacheCoverage = GetRadianceCacheCoverage(WSHackToFloat(GetWorldPosition(MaterialParameters)), RayDirection, ClipmapDitherRandom);
+		LumenRadianceCacheCoverage = GetRadianceCacheCoverage(GetTranslatedWorldPosition(MaterialParameters), RayDirection, ClipmapDitherRandom);
 	}
 
 	if (bUseLumenFrontLayerReflection)
@@ -480,7 +480,7 @@ half3 GetImageBasedReflectionSpecular(FMaterialPixelParameters MaterialParameter
 	else if (LumenRadianceCacheCoverage.bValid)
 	{
 		float ConeHalfAngle = 0;
-		SpecularIBL = SampleRadianceCacheInterpolated(LumenRadianceCacheCoverage, WSHackToFloat(GetWorldPosition(MaterialParameters)), RayDirection, ConeHalfAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance;
+		SpecularIBL = SampleRadianceCacheInterpolated(LumenRadianceCacheCoverage, GetTranslatedWorldPosition(MaterialParameters), RayDirection, ConeHalfAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance;
 	}
 	// Fallback to unshadowed skylight if no valid Radiance Cache
 	else

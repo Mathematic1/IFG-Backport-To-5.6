@@ -22,6 +22,7 @@
 #include "LumenFloatQuantization.ush"
 #include "../ReflectionEnvironmentShared.ush"
 #include "../StochasticLighting/StochasticLightingCommon.ush"
+#include "LumenUpsample.ush"
 
 #ifndef THREADGROUP_SIZE
 #define THREADGROUP_SIZE 1
@@ -70,9 +71,6 @@ float3 GetMaterialWorldNormal(uint2 PixelPos)
 {
 	return ReadMaterialData(PixelPos).WorldNormal;
 }
-
-uint2 IntegrateViewMin;
-uint2 IntegrateViewSize;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -335,17 +333,17 @@ void MarkRadianceProbesUsedByScreenProbesCS(
 	{
 		float2 ScreenUV = GetScreenUVFromScreenProbePosition(ScreenProbeScreenPosition);
 		float SceneDepth = GetScreenProbeDepth(ScreenProbeAtlasCoord);
-		float3 WorldPosition = GetWorldPositionFromScreenUV(ScreenUV, SceneDepth);
+		float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
 
 		if (SceneDepth > 0)
 		{
-			uint ClipmapIndex = GetRadianceProbeClipmapForMark(WorldPosition, 0);
+			uint ClipmapIndex = GetRadianceProbeClipmapForMark(TranslatedWorldPosition, 0);
 
 			if (IsValidRadianceCacheClipmapForMark(ClipmapIndex))
 			{
 				//@todo - cull by screen size
 				//@todo - cull probes too small for voxel tracing and too large for max trace distance
-				MarkPositionUsedInIndirectionTexture(WorldPosition, ClipmapIndex);
+				MarkPositionUsedInIndirectionTexture(TranslatedWorldPosition, ClipmapIndex);
 			}
 		}
 	}
@@ -387,8 +385,8 @@ void MarkRadianceProbesUsedByHairStrandsCS(uint3 DispatchThreadId : SV_DispatchT
 	if (SceneDepth > 0)
 	#if HAIRSTRANDS_MARK_USED_METHOD == MARK_PROBE_ACCUMRATE
 	{
-		const float3 P0			= GetWorldPositionFromScreenUV((PixelCoords + uint2(0, 0)) * HairStrandsInvResolution, SceneDepth);
-		const float3 P1			= GetWorldPositionFromScreenUV((PixelCoords + uint2(1, 1)) * HairStrandsInvResolution, SceneDepth);
+		const float3 P0			= GetTranslatedWorldPositionFromScreenUV((PixelCoords + uint2(0, 0)) * HairStrandsInvResolution, SceneDepth);
+		const float3 P1			= GetTranslatedWorldPositionFromScreenUV((PixelCoords + uint2(1, 1)) * HairStrandsInvResolution, SceneDepth);
 		const float3 MinAABB    = min(P0, P1);
 		const float3 MaxAABB    = max(P0, P1);
 
@@ -446,7 +444,7 @@ void MarkRadianceProbesUsedByHairStrandsCS(uint3 DispatchThreadId : SV_DispatchT
 	}
 	#else // HAIRSTRANDS_MARK_USED_METHOD == MARK_PROBE_FAST
 	{
-		const float3 P0 = GetWorldPositionFromScreenUV((PixelCoords + float2(0.5f, 0.5f)) * HairStrandsInvResolution, SceneDepth);
+		const float3 P0 = GetTranslatedWorldPositionFromScreenUV((PixelCoords + float2(0.5f, 0.5f)) * HairStrandsInvResolution, SceneDepth);
 		const uint ClipmapIndex = GetRadianceProbeClipmapForMark(P0);
 		if (IsValidRadianceCacheClipmapForMark(ClipmapIndex))
 		{

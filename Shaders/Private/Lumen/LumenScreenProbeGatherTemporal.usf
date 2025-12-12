@@ -12,6 +12,7 @@
 #include "LumenPosition.ush"
 #include "../StochasticLighting/StochasticLightingCommon.ush"
 #include "../StochasticLighting/StochasticLightingUpsample.ush"
+#include "LumenUpsample.ush"
 
 // Float R11G11B10 max
 #define INVALID_LIGHTING float3(65024.0f, 65024.0f, 64512.0f)
@@ -90,9 +91,6 @@ uint4 HistoryViewportMinMax;
 float4 HistoryBufferSizeAndInvSize;
 
 float ShortRangeAOTemporalNeighborhoodClampScale;
-
-uint2 IntegrateViewMin;
-uint2 IntegrateViewSize;
 
 uint2 ShortRangeAOViewMin;
 uint2 ShortRangeAOViewSize;

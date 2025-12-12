@@ -384,8 +384,7 @@ void ReflectionGenerateRaysCS(
 
 				if (RadianceCacheRoughness > RadianceCacheMinRoughness)
 				{
-					float3 WorldPosition = TranslatedWorldPosition - DFHackToFloat(PrimaryView.PreViewTranslation); // LUMEN_LWC_TODO
-					FRadianceCacheCoverage Coverage = GetRadianceCacheCoverageWithUncertainCoverage(WorldPosition, RayDirection, InterleavedGradientNoise(ReflectionTracingCoord.xy, ReflectionsStateFrameIndexMod8));
+					FRadianceCacheCoverage Coverage = GetRadianceCacheCoverageWithUncertainCoverage(TranslatedWorldPosition, RayDirection, InterleavedGradientNoise(ReflectionTracingCoord.xy, ReflectionsStateFrameIndexMod8));
 					bUseRadianceCache = Coverage.bValid;
 					if (Coverage.bValid)
 					{

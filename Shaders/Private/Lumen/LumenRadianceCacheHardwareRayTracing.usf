@@ -157,7 +157,7 @@ FRadianceCache LoadRadianceCache(uint RadianceCacheIndex, uint LocalTraceTileInd
 		UnpackTraceTileInfo(RadianceCache_1_ProbeTraceTileData[LocalTraceTileIndex], RadianceCache.TraceTileCoord, RadianceCache.TraceTileLevel, RadianceCache.ProbeTraceIndex);	
 
 		FProbeTraceData ProbeTraceData = GetProbeTraceData(RadianceCache_1_ProbeTraceData[RadianceCache.ProbeTraceIndex]);
-		RadianceCache.ProbeWorldCenter = ProbeTraceData.ProbeWorldCenter;
+		RadianceCache.ProbeWorldCenter = ProbeTraceData.ProbeTranslatedWorldCenter;
 		RadianceCache.ClipmapIndex = ProbeTraceData.ClipmapIndex;
 		RadianceCache.ProbeIndex = ProbeTraceData.ProbeIndex;
 
@@ -174,7 +174,7 @@ FRadianceCache LoadRadianceCache(uint RadianceCacheIndex, uint LocalTraceTileInd
 		UnpackTraceTileInfo(RadianceCache_0_ProbeTraceTileData[LocalTraceTileIndex], RadianceCache.TraceTileCoord, RadianceCache.TraceTileLevel, RadianceCache.ProbeTraceIndex);	
 
 		FProbeTraceData ProbeTraceData = GetProbeTraceData(RadianceCache_0_ProbeTraceData[RadianceCache.ProbeTraceIndex]);
-		RadianceCache.ProbeWorldCenter = ProbeTraceData.ProbeWorldCenter;
+		RadianceCache.ProbeWorldCenter = ProbeTraceData.ProbeTranslatedWorldCenter;
 		RadianceCache.ClipmapIndex = ProbeTraceData.ClipmapIndex;
 		RadianceCache.ProbeIndex = ProbeTraceData.ProbeIndex;
 

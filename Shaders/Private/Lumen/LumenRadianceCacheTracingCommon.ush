@@ -7,16 +7,16 @@
 
 struct FProbeTraceData
 {
-	float3 ProbeWorldCenter; // LUMEN_LWC_TODO
+	float3 ProbeTranslatedWorldCenter;
 	uint ClipmapIndex;
 	uint ProbeIndex;
 	bool bForceDownsample;
 };
 
-float4 PackProbeTraceData(float3 ProbeWorldPosition, uint ClipmapIndex, uint ProbeIndex, bool bForceDownsample)
+float4 PackProbeTraceData(float3 ProbeTranslatedWorldPosition, uint ClipmapIndex, uint ProbeIndex, bool bForceDownsample)
 {
 	float4 Packed;
-	Packed.xyz = ProbeWorldPosition;
+	Packed.xyz = ProbeTranslatedWorldPosition;
 
 	uint PackedW = (ClipmapIndex << 24u) | ProbeIndex;
 	PackedW |= bForceDownsample ? (1u << 31u) : 0;
@@ -28,7 +28,7 @@ float4 PackProbeTraceData(float3 ProbeWorldPosition, uint ClipmapIndex, uint Pro
 FProbeTraceData GetProbeTraceDataNoOffset(float4 InProbeTraceData)
 {
 	FProbeTraceData ProbeTraceData;
-	ProbeTraceData.ProbeWorldCenter = InProbeTraceData.xyz;
+	ProbeTraceData.ProbeTranslatedWorldCenter = InProbeTraceData.xyz;
 	uint PackedW = asuint(InProbeTraceData.w);
 	ProbeTraceData.ClipmapIndex = (PackedW >> 24u) & 0x7F;
 	ProbeTraceData.ProbeIndex = PackedW & 0xFFFFFF;

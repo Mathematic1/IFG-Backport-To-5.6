@@ -303,7 +303,7 @@ void ScreenProbeComputeLightingProbabilityDensityFunctionCS(
 		&& ScreenProbeAtlasCoord.x < ScreenProbeAtlasViewSize.x
 		&& SceneDepth > 0)
 	{
-		float3 WorldPosition = GetWorldPositionFromScreenUV(ScreenUV, SceneDepth);
+		float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
 		float PDF = 0.0f;
 
 		if (all(ProbeTexelCoord < ScreenProbeTracingOctahedronResolution))
@@ -333,7 +333,7 @@ void ScreenProbeComputeLightingProbabilityDensityFunctionCS(
 				float2 UnclampedHistoryScreenProbeCoord = GetScreenTileCoordFromScreenUV(HistoryScreenUV, HistoryTemporalIndex);
 
 				float3 SceneNormal = GetScreenProbeNormal(ScreenProbeAtlasCoord);
-				float4 ScenePlane = float4(SceneNormal, dot(WorldPosition, SceneNormal));
+				float4 TranslatedScenePlane = float4(SceneNormal, dot(TranslatedWorldPosition, SceneNormal));
 
 				float3 HistoryRadiance = 0;
 				float HistoryRadianceWeight = 0;
@@ -348,8 +348,8 @@ void ScreenProbeComputeLightingProbabilityDensityFunctionCS(
 
 						if (NeighborHistoryDepth >= 0)
 						{
-							float3 NeighborWorldPosition = HistoryScreenProbeTranslatedWorldPosition[NeighborHistoryScreenProbeCoord] - DFHackToFloat(PrimaryView.PrevPreViewTranslation);
-							float PlaneDistance = abs(dot(float4(NeighborWorldPosition, -1), ScenePlane));
+							float3 NeighborTranslatedWorldPosition = HistoryScreenProbeTranslatedWorldPosition[NeighborHistoryScreenProbeCoord];
+							float PlaneDistance = abs(dot(float4(NeighborTranslatedWorldPosition, -1), TranslatedScenePlane));
 							float RelativeDepthDifference = PlaneDistance / SceneDepth;
 							float PositionWeight = exp2(-10000.0f * (RelativeDepthDifference * RelativeDepthDifference)) > .1f ? 1.0f : 0.0f;
 
@@ -379,11 +379,11 @@ void ScreenProbeComputeLightingProbabilityDensityFunctionCS(
 				float3 WorldConeDirection = EquiAreaSphericalMapping(ProbeUV);
 				float ConeHalfAngle = acosFast(1.0f - 1.0f / (float)(ScreenProbeTracingOctahedronResolution * ScreenProbeTracingOctahedronResolution));
 
-				FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(WorldPosition, WorldConeDirection, 0);
+				FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, WorldConeDirection, 0);
 				
 				if (Coverage.bValid)
 				{
-					Lighting += SampleRadianceCacheInterpolated(Coverage, WorldPosition, WorldConeDirection, ConeHalfAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance * Transparency;
+					Lighting += SampleRadianceCacheInterpolated(Coverage, TranslatedWorldPosition, WorldConeDirection, ConeHalfAngle, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance * Transparency;
 				}
 				else
 #endif

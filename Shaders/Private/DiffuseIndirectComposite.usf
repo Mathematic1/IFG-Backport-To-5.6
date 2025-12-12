@@ -83,6 +83,8 @@ RWTexture2D<float3> OutSubSurfaceSceneColor;
 #include "ScreenSpaceDenoise/SSDSignalArray.ush"
 #include "ScreenSpaceDenoise/SSDSpatialKernel.ush"
 #include "Lumen/LumenScreenSpaceBentNormal.ush"
+#include "Lumen/LumenUpsample.ush"
+#include "BlueNoise.ush"
 
 #endif
 
@@ -135,6 +137,8 @@ RWTexture2D<float4> PassDebugOutput;
 
 uint bLumenSupportBackfaceDiffuse;
 uint bLumenReflectionInputIsSSR;
+uint LumenGIDownsampleFactor;
+uint ShortRangeAODownsampleFactor;
 float LumenFoliageOcclusionStrength;
 float LumenMaxAOMultibounceAlbedo;
 float LumenReflectionContrast;
@@ -160,21 +164,23 @@ struct FShadingOcclusion
 	Texture2DArray<UNORM float> ShortRangeAOTexture;
 #endif
 
-FShadingOcclusion GetShadingOcclusion(uint2 InPixelPos, uint InBSDFIndex, float3 V, float3 N, float Roughness, float3 DiffuseColor, float InAO)
+FShadingOcclusion GetShadingOcclusion(uint2 PixelPos, uint2 LumenBufferCoord, uint InBSDFIndex, float3 V, float3 N, float Roughness, float3 DiffuseColor, float InAO)
 {
 	FShadingOcclusion Out = (FShadingOcclusion)0;
 	Out.SpecularOcclusion = 1;
 	Out.DiffuseOcclusion = 1;
 
+	uint2 ShortRangeAOCoord = ShortRangeAODownsampleFactor == LumenGIDownsampleFactor ? LumenBufferCoord : PixelPos;
+
 #if DIM_APPLY_DIFFUSE_INDIRECT == DIM_APPLY_DIFFUSE_INDIRECT_SCREEN_PROBE_GATHER
   #if DIM_SCREEN_BENT_NORMAL_MODE == 2
-	const float3 BentNormal = UnpackScreenBentNormal(ShortRangeAOTexture[uint3(InPixelPos, InBSDFIndex)]);
+	const float3 BentNormal = UnpackScreenBentNormal(ShortRangeAOTexture[uint3(ShortRangeAOCoord, InBSDFIndex)]);
 	const float AO = length(BentNormal);
 	Out.SpecularOcclusion = CalculateSpecularOcclusion(N, Roughness, AO, V, BentNormal);
 	Out.DiffuseOcclusion = DistantIlluminationRescale(min(DiffuseColor, LumenMaxAOMultibounceAlbedo), AO);
   #elif DIM_SCREEN_BENT_NORMAL_MODE == 1
 	const float3 BentNormal = N;
-	const float AO = ShortRangeAOTexture[uint3(InPixelPos, InBSDFIndex)];
+	const float AO = ShortRangeAOTexture[uint3(ShortRangeAOCoord, InBSDFIndex)];
 	Out.SpecularOcclusion = CalculateSpecularOcclusion(N, Roughness, AO, V, BentNormal);
 	Out.DiffuseOcclusion = DistantIlluminationRescale(min(DiffuseColor, LumenMaxAOMultibounceAlbedo), AO);
   #else
@@ -330,6 +336,81 @@ FSubstrateDeferredLighting SubstrateIndirectLighting(
 }
 #endif // SUBTRATE_GBUFFER_FORMAT==1
 
+float3 UpsampleLegacySSGI(uint2 PixelPos, float2 SceneBufferUV, FLumenMaterialData Material)
+{
+	// Sample the output of the denoiser.
+	FSSDKernelConfig KernelConfig = CreateKernelConfig();
+				
+	#if DEBUG_OUTPUT
+	{
+		KernelConfig.DebugPixelPosition = PixelPos;
+		KernelConfig.DebugEventCounter = 0;
+	}
+	#endif
+
+	// Compile time.
+	KernelConfig.bSampleKernelCenter = true;
+	KernelConfig.BufferLayout = CONFIG_SIGNAL_INPUT_LAYOUT;
+	KernelConfig.bUnroll = true;
+
+	#if DIM_UPSCALE_SSGI
+	{
+		KernelConfig.SampleSet = SAMPLE_SET_2X2_BILINEAR;
+		KernelConfig.BilateralDistanceComputation = SIGNAL_WORLD_FREQUENCY_REF_METADATA_ONLY;
+		KernelConfig.WorldBluringDistanceMultiplier = 16.0;
+				
+		KernelConfig.BilateralSettings[0] = BILATERAL_POSITION_BASED(3);
+				
+		// SGPRs
+		KernelConfig.BufferSizeAndInvSize = View.BufferSizeAndInvSize * float4(0.5, 0.5, 2.0, 2.0);
+		KernelConfig.BufferBilinearUVMinMax = View.BufferBilinearUVMinMax;
+	}
+	#else
+	{
+		KernelConfig.SampleSet = SAMPLE_SET_1X1;
+		KernelConfig.bNormalizeSample = true;
+				
+		// SGPRs
+		KernelConfig.BufferSizeAndInvSize = View.BufferSizeAndInvSize;
+		KernelConfig.BufferBilinearUVMinMax = View.BufferBilinearUVMinMax;
+	}
+	#endif
+
+	// VGPRs
+	KernelConfig.BufferUV = SceneBufferUV; 
+	{
+		// SUBSTRATE_TODO: We use the top layer data, but we should resolve lighting for each BSDFs.
+		KernelConfig.CompressedRefSceneMetadata = MaterialToCompressedSceneMetadata(Material.SceneDepth, Material.WorldNormal, Material.Roughness, Material.ShadingID);
+		KernelConfig.RefBufferUV = SceneBufferUV;
+		KernelConfig.RefSceneMetadataLayout = METADATA_BUFFER_LAYOUT_DISABLED;
+	}
+	KernelConfig.HammersleySeed = Rand3DPCG16(int3(PixelPos, View.StateFrameIndexMod8)).xy;
+				
+	FSSDSignalAccumulatorArray UncompressedAccumulators = CreateSignalAccumulatorArray();
+	FSSDCompressedSignalAccumulatorArray CompressedAccumulators = CompressAccumulatorArray(
+		UncompressedAccumulators, CONFIG_ACCUMULATOR_VGPR_COMPRESSION);
+
+	AccumulateKernel(
+		KernelConfig,
+		DiffuseIndirect_Textures_0,
+		DiffuseIndirect_Textures_1,
+		DiffuseIndirect_Textures_2,
+		DiffuseIndirect_Textures_3,
+		/* inout */ UncompressedAccumulators,
+		/* inout */ CompressedAccumulators);
+
+	//PassDebugOutput[PixelPos] = float4(UncompressedAccumulators.Array[0].Moment1.SampleCount, 0, 0, 0);
+
+	FSSDSignalSample Sample;
+	#if DIM_UPSCALE_SSGI
+		Sample = NormalizeToOneSample(UncompressedAccumulators.Array[0].Moment1);
+	#else
+		Sample = UncompressedAccumulators.Array[0].Moment1;
+	#endif
+				
+	return Sample.SceneColor.rgb;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void MainPS(
@@ -389,10 +470,20 @@ void MainPS(
 			float3 DiffuseIndirectLighting = 0;
 			float3 RoughSpecularIndirectLighting = 0;
 			float4 SpecularIndirectLighting = 0;
+			uint2 LumenBufferCoord = PixelPos;
 
 			#if DIM_APPLY_DIFFUSE_INDIRECT == DIM_APPLY_DIFFUSE_INDIRECT_SCREEN_PROBE_GATHER
-				DiffuseIndirectLighting 		= DiffuseIndirect_Lumen_0.SampleLevel(GlobalPointClampedSampler, float3(SceneBufferUV, 0), 0).rgb;
-				RoughSpecularIndirectLighting 	= DiffuseIndirect_Lumen_2.SampleLevel(GlobalPointClampedSampler, float3(SceneBufferUV, 0), 0).rgb;
+				#if DIM_UPSCALE_LUMEN_GI
+				{
+					const float RandomScalar = BlueNoiseScalar(PixelPos, View.StateFrameIndex);
+					uint2 StochasticBilinearOffset = GetStochasticBilinearOffsetForUpsample(PixelPos, SceneBufferUV, TranslatedWorldPosition, Material.WorldNormal, Material.SceneDepth, RandomScalar, LumenGIDownsampleFactor);
+					int2 UnclampedDownsampledCoord = (int2(PixelPos) - 1) / LumenGIDownsampleFactor + StochasticBilinearOffset;
+					LumenBufferCoord = clamp(UnclampedDownsampledCoord, (int2)IntegrateViewMin, (int2)(IntegrateViewMin + IntegrateViewSize - 1));
+				}
+				#endif
+
+				DiffuseIndirectLighting = DiffuseIndirect_Lumen_0.Load(uint4(LumenBufferCoord, 0, 0)).rgb;
+				RoughSpecularIndirectLighting = DiffuseIndirect_Lumen_2.Load(uint4(LumenBufferCoord, 0, 0)).rgb;
 				
 				if (bLumenReflectionInputIsSSR)
 				{
@@ -407,86 +498,8 @@ void MainPS(
 				{
 					SpecularIndirectLighting = DiffuseIndirect_Lumen_3.SampleLevel(GlobalPointClampedSampler, float3(SceneBufferUV, 0), 0).rgba;
 				}
-			#else
-			{
-				// Sample the output of the denoiser.
-				FSSDKernelConfig KernelConfig = CreateKernelConfig();
-				
-				#if DEBUG_OUTPUT
-				{
-					KernelConfig.DebugPixelPosition = uint2(SvPosition.xy);
-					KernelConfig.DebugEventCounter = 0;
-				}
-				#endif
-
-				// Compile time.
-				KernelConfig.bSampleKernelCenter = true;
-				KernelConfig.BufferLayout = CONFIG_SIGNAL_INPUT_LAYOUT;
-				KernelConfig.bUnroll = true;
-
-				#if DIM_UPSCALE_DIFFUSE_INDIRECT
-				{
-					KernelConfig.SampleSet = SAMPLE_SET_2X2_BILINEAR;
-					KernelConfig.BilateralDistanceComputation = SIGNAL_WORLD_FREQUENCY_REF_METADATA_ONLY;
-					KernelConfig.WorldBluringDistanceMultiplier = 16.0;
-				
-					KernelConfig.BilateralSettings[0] = BILATERAL_POSITION_BASED(3);
-				
-					// SGPRs
-					KernelConfig.BufferSizeAndInvSize = View.BufferSizeAndInvSize * float4(0.5, 0.5, 2.0, 2.0);
-					KernelConfig.BufferBilinearUVMinMax = View.BufferBilinearUVMinMax;
-				}
-				#else
-				{
-					KernelConfig.SampleSet = SAMPLE_SET_1X1;
-					KernelConfig.bNormalizeSample = true;
-				
-					// SGPRs
-					KernelConfig.BufferSizeAndInvSize = View.BufferSizeAndInvSize;
-					KernelConfig.BufferBilinearUVMinMax = View.BufferBilinearUVMinMax;
-				}
-				#endif
-
-				// VGPRs
-				KernelConfig.BufferUV = SceneBufferUV; 
-				{
-					// SUBSTRATE_TODO: We use the top layer data, but we should resolve lighting for each BSDFs.
-					KernelConfig.CompressedRefSceneMetadata = MaterialToCompressedSceneMetadata(Material.SceneDepth, Material.WorldNormal, Material.Roughness, Material.ShadingID);
-					KernelConfig.RefBufferUV = SceneBufferUV;
-					KernelConfig.RefSceneMetadataLayout = METADATA_BUFFER_LAYOUT_DISABLED;
-				}
-				KernelConfig.HammersleySeed = Rand3DPCG16(int3(SvPosition.xy, View.StateFrameIndexMod8)).xy;
-				
-				FSSDSignalAccumulatorArray UncompressedAccumulators = CreateSignalAccumulatorArray();
-				FSSDCompressedSignalAccumulatorArray CompressedAccumulators = CompressAccumulatorArray(
-					UncompressedAccumulators, CONFIG_ACCUMULATOR_VGPR_COMPRESSION);
-
-				AccumulateKernel(
-					KernelConfig,
-					DiffuseIndirect_Textures_0,
-					DiffuseIndirect_Textures_1,
-					DiffuseIndirect_Textures_2,
-					DiffuseIndirect_Textures_3,
-					/* inout */ UncompressedAccumulators,
-					/* inout */ CompressedAccumulators);
-
-				//PassDebugOutput[uint2(SvPosition.xy)] = float4(UncompressedAccumulators.Array[0].Moment1.SampleCount, 0, 0, 0);
-
-				FSSDSignalSample Sample;
-				#if DIM_UPSCALE_DIFFUSE_INDIRECT
-					Sample = NormalizeToOneSample(UncompressedAccumulators.Array[0].Moment1);
-				#else
-					Sample = UncompressedAccumulators.Array[0].Moment1;
-				#endif
-				
-				#if DIM_APPLY_DIFFUSE_INDIRECT == DIM_APPLY_DIFFUSE_INDIRECT_SSGI
-				{
-					DiffuseIndirectLighting = Sample.SceneColor.rgb;
-				}
-				#else
-					#error Unimplemented
-				#endif
-			}
+			#elif DIM_APPLY_DIFFUSE_INDIRECT == DIM_APPLY_DIFFUSE_INDIRECT_SSGI
+				DiffuseIndirectLighting = UpsampleLegacySSGI(PixelPos, SceneBufferUV, Material);
 			#endif
 
 			#if SUBTRATE_GBUFFER_FORMAT==1
@@ -524,7 +537,7 @@ void MainPS(
 				RemapClearCoatDiffuseAndSpecularColor(GBuffer, NoV, DiffuseColor, SpecularColor);
 			#endif
 
-			FShadingOcclusion Occlusion = GetShadingOcclusion(PixelPos, 0 /*BSDFIndex*/, V, N, GBuffer.Roughness, GBuffer.BaseColor, DynamicAmbientOcclusion);
+			FShadingOcclusion Occlusion = GetShadingOcclusion(PixelPos, LumenBufferCoord, 0 /*BSDFIndex*/, V, N, GBuffer.Roughness, GBuffer.BaseColor, DynamicAmbientOcclusion);
 
 			if (GBuffer.ShadingModelID == SHADINGMODELID_TWOSIDED_FOLIAGE || GBuffer.ShadingModelID == SHADINGMODELID_SUBSURFACE)
 			{

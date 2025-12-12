@@ -151,11 +151,10 @@ float3 GatherRadiance(float3 RayDirection, float Roughness, uint2 PixelPosition,
 {
 #if PERMUTATION_LUMEN
 	// Lumen probe
-	const float3 AbsoluteWorldPosition = TranslatedWorldPosition + DFHackToFloat(PrimaryView.WorldCameraOrigin); // HAIR_LWC
-	FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(AbsoluteWorldPosition, RayDirection, .5f); // HAIR_LWC
+	FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, RayDirection, .5f);
 	if (Coverage.bValid)
 	{
-		return SampleRadianceCacheInterpolated(Coverage, AbsoluteWorldPosition, RayDirection, /*ConeHalfAngle*/ 0, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance;
+		return SampleRadianceCacheInterpolated(Coverage, TranslatedWorldPosition, RayDirection, /*ConeHalfAngle*/ 0, /*RandomScalarForStochasticInterpolation*/ 0.5f).Radiance;
 	}	
 	return 0;
 #else

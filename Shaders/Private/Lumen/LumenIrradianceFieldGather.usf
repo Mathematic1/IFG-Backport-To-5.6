@@ -8,117 +8,188 @@
 #include "../SceneTextureParameters.ush"
 #include "LumenPosition.ush"
 #include "LumenRadianceCacheMarkCommon.ush"
+#include "LumenIrradianceFieldInterpolation.ush"
 #include "LumenRadianceCacheCommon.ush"
 #include "LumenReflectionsCombine.ush"
 #include "../ClearCoatCommon.ush"
 #include "../ReflectionEnvironmentShared.ush"
+#include "LumenUpsample.ush"
+#include "LumenTracingCommon.ush"
 
 #ifndef THREADGROUP_SIZE
 #define THREADGROUP_SIZE 1
 #endif
 
-/*
-
-Texture2D<float> FurthestHZBTexture;
-Texture2D<float> ClosestHZBTexture;
-uint HZBMipLevel;
+uint MarkProbesDownsampleFactor;
 
 [numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
-void MarkRadianceProbesUsedByHZBCS(
-	uint3 GroupId : SV_GroupID,
-	uint3 DispatchThreadId : SV_DispatchThreadID,
-	uint3 GroupThreadId : SV_GroupThreadID)
+void MarkProbesUsedByGBufferCS(
+	uint2 DispatchThreadId : SV_DispatchThreadID)
 {
-	// Construct 8 corners of HZB tile in world space
-	// Compute indirection coord range
-	// if no gap, mark used
-	//		otherwise queue for full res
+	// We can downsample marking in a jittered pattern since probes are kept around for more than one frame
+	uint2 InterpolateDispatchThreadId = DispatchThreadId * MarkProbesDownsampleFactor + GetDownsampledCoordJitter(DispatchThreadId, MarkProbesDownsampleFactor);
+	// Reconstruct the full res SvPosition that corresponds to this interpolation coord
+	uint2 SvPosition = InterpolateDispatchThreadId * INTERPOLATE_DOWNSAMPLE_FACTOR + View.ViewRectMinAndSize.xy + GetDownsampledCoordJitter(InterpolateDispatchThreadId, INTERPOLATE_DOWNSAMPLE_FACTOR);
+	float2 ScreenUV = (SvPosition + 0.5f) * View.BufferSizeAndInvSize.zw;
+	uint2 InterpolateCoord = InterpolateDispatchThreadId + IntegrateViewMin;
 
-	float2 HZBScreenUV = (DispatchThreadId.xy + .5f) * View.ViewSizeAndInvSize.zw * ViewportUVToHZBBufferUV;
-	float MinDepth = ConvertFromDeviceZ(ClosestHZBTexture.SampleLevel(GlobalPointClampedSampler, HZBScreenUV, HZBMipLevel).x);
-	float MaxDepth = ConvertFromDeviceZ(FurthestHZBTexture.SampleLevel(GlobalPointClampedSampler, HZBScreenUV, HZBMipLevel).x);
-
-	float3 WorldPosition000 = GetWorldPositionFromScreenUV(ScreenUV, SceneDepth);
-}
-*/
-
-[numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
-void MarkRadianceProbesUsedByGBufferCS(
-	uint3 GroupId : SV_GroupID,
-	uint3 DispatchThreadId : SV_DispatchThreadID,
-	uint3 GroupThreadId : SV_GroupThreadID)
-{
-	uint2 SvPosition = DispatchThreadId.xy + View.ViewRectMinAndSize.xy;
-	float2 ScreenUV = (SvPosition + 0.5) * View.BufferSizeAndInvSize.zw;
-	float SceneDepth = CalcSceneDepth(ScreenUV);
-	float3 WorldPosition = GetWorldPositionFromScreenUV(ScreenUV, SceneDepth);
-
-	uint ClipmapIndex = GetRadianceProbeClipmapForMark(WorldPosition, InterleavedGradientNoise(SvPosition, View.StateFrameIndexMod8));
-
-	if (IsValidRadianceCacheClipmapForMark(ClipmapIndex))
+	if (and(all(InterpolateCoord.xy >= IntegrateViewMin), all(InterpolateCoord.xy < IntegrateViewMin + IntegrateViewSize)))
 	{
-		MarkPositionUsedInIndirectionTexture(WorldPosition, ClipmapIndex);
+		float SceneDepth;
+
+		#if INTERPOLATE_DOWNSAMPLE_FACTOR == 2
+			SceneDepth = DownsampledSceneDepth[InterpolateCoord];
+		#else
+			SceneDepth = CalcSceneDepth(ScreenUV);
+		#endif
+
+		if (SceneDepth >= 0.0f)
+		{
+			float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, SceneDepth);
+
+			uint ClipmapIndex = GetRadianceProbeClipmapForMark(TranslatedWorldPosition, InterleavedGradientNoise(SvPosition, View.StateFrameIndexMod8));
+
+			if (IsValidRadianceCacheClipmapForMark(ClipmapIndex))
+			{
+				MarkPositionUsedInIndirectionTexture(TranslatedWorldPosition, ClipmapIndex);
+			}
+		}
 	}
 }
 
-RWTexture2D<float4> RWDiffuseIndirect;
-RWTexture2D<float3> RWRoughSpecularIndirect;
-float ProbeOcclusionViewBias;
-float ProbeOcclusionNormalBias;
+float MaxRoughnessToEvaluateRoughSpecular;
+
+// Computes the lerp factor to diffuse for rough specular, as an optimization to skip rough specular computations
+// 1 = fully diffuse and rough reflection computation can be skipped
+float RoughReflectionsDiffuseLerp(FLumenMaterialData Material)
+{
+	const bool bHasBackfaceDiffuse = HasBackfaceDiffuse(Material);
+
+	float FadeLength = 0.1f;
+	float MaxRoughnessToEvaluateRoughSpecularForFoliage = 0.0f;
+	return saturate((Material.Roughness - (bHasBackfaceDiffuse ? MaxRoughnessToEvaluateRoughSpecularForFoliage : MaxRoughnessToEvaluateRoughSpecular) + FadeLength) / FadeLength);
+}
+
+RWBuffer<uint> RWProbeInterpolationMisses;
+uint MaxNumProbes;
+
+void HandleInterpolationMisses(FIrradianceCacheInterpolation Interpolation, uint ClipmapIndex, float3 TranslatedSamplePosition)
+{
+	#if ADAPTIVE_PROBES
+	if (!Interpolation.bSuccess)
+	{
+		uint ProbeIndex = GetProbeIndexFromIndirectionTexture(Interpolation.ProbeCoord, ClipmapIndex);
+		float3 ProbeTranslatedWorldPosition = GetProbeTranslatedWorldPositionNoOffset(Interpolation.ProbeCoord, ClipmapIndex);
+		float3 IdealProbeOffset = TranslatedSamplePosition - ProbeTranslatedWorldPosition;
+		InterlockedAdd(RWProbeInterpolationMisses[ProbeIndex], 1);
+		//@todo - handle overflow
+		float CellPrecision = 128.0f;
+		float2 QuantizeScaleAndBias = CellPrecision * float2(.5f / GetRadianceProbeClipmapCellSize(ClipmapIndex), .5f);
+		uint3 QuantizedIdealProbeOffset = clamp(round(IdealProbeOffset * QuantizeScaleAndBias.x + QuantizeScaleAndBias.y), 0.0f, CellPrecision);
+		InterlockedAdd(RWProbeInterpolationMisses[1 * MaxNumProbes + ProbeIndex], QuantizedIdealProbeOffset.x);
+		InterlockedAdd(RWProbeInterpolationMisses[2 * MaxNumProbes + ProbeIndex], QuantizedIdealProbeOffset.y);
+		InterlockedAdd(RWProbeInterpolationMisses[3 * MaxNumProbes + ProbeIndex], QuantizedIdealProbeOffset.z);
+	}
+	#endif
+}
+
+RWTexture2DArray<float3> RWDiffuseIndirect;
+RWTexture2DArray<float3> RWRoughSpecularIndirect;
+float ProbeOcclusionBias;
+
+uint InterpolationFeedbackTileWrapMask;
+uint2 InterpolationFeedbackTileJitter;
 
 [numthreads(THREADGROUP_SIZE, THREADGROUP_SIZE, 1)]
-void IrradianceFieldGatherCS(
+void InterpolateIrradianceProbesToPixelsCS(
 	uint2 DispatchThreadId : SV_DispatchThreadID)
 {
-	uint2 SvPosition = DispatchThreadId + View.ViewRectMinAndSize.xy;
+	uint2 SvPosition = DispatchThreadId * INTERPOLATE_DOWNSAMPLE_FACTOR + View.ViewRectMinAndSize.xy + GetDownsampledCoordJitter(DispatchThreadId, INTERPOLATE_DOWNSAMPLE_FACTOR);
 	float2 ScreenUV = (SvPosition + 0.5f) * View.BufferSizeAndInvSize.zw;
-	float SceneDepth = CalcSceneDepth(ScreenUV);
+	
+	uint2 InterpolateCoord = DispatchThreadId + IntegrateViewMin;
 
-	if (all(SvPosition < View.ViewRectMinAndSize.xy + View.ViewRectMinAndSize.zw))
+	if (and(all(InterpolateCoord.xy >= IntegrateViewMin), all(InterpolateCoord.xy < IntegrateViewMin + IntegrateViewSize)))
 	{
-		const FLumenMaterialData Material = ReadMaterialData(SvPosition, ScreenUV);
+		FLumenMaterialData Material = ReadMaterialData(SvPosition, ScreenUV);
+
+		#if INTERPOLATE_DOWNSAMPLE_FACTOR == 2
+			Material.SceneDepth = DownsampledSceneDepth[InterpolateCoord];
+			Material.bIsValid = Material.SceneDepth >= 0;
+			Material.WorldNormal = normalize(DecodeNormal(DownsampledSceneWorldNormal[InterpolateCoord]));
+		#endif
 		
 		if (IsValid(Material))
 		{
-			float3 WorldPosition = GetWorldPositionFromScreenUV(ScreenUV, SceneDepth);
-			float3 V = -GetCameraVectorFromTranslatedWorldPosition(WorldPosition);
-			uint ClipmapIndex = GetRadianceProbeClipmap(WorldPosition, InterleavedGradientNoise(SvPosition, View.StateFrameIndexMod8));
+			float3 TranslatedWorldPosition = GetTranslatedWorldPositionFromScreenUV(ScreenUV, Material.SceneDepth);
+			float3 V = -GetCameraVectorFromTranslatedWorldPosition(TranslatedWorldPosition);
+			float ClipmapDither = InterleavedGradientNoise(SvPosition, View.StateFrameIndexMod8);
+			uint ClipmapIndex = GetRadianceProbeClipmap(TranslatedWorldPosition, ClipmapDither);
+			float3 WorldNormalForReflection = GetClearCoatBottomNormal(Material);
+			float3 ReflectionVector = reflect(-V, WorldNormalForReflection);
+			float ConeHalfAngle = saturate(Material.Roughness * .8f);
+			float DiffuseLerp = RoughReflectionsDiffuseLerp(Material);
 
 			float3 DiffuseLighting = 0;
+			float3 SpecularLighting = 0;
 
 			if (ClipmapIndex < NumRadianceProbeClipmaps)
 			{
-				float3 BiasOffset = Material.WorldNormal * ProbeOcclusionNormalBias + V * ProbeOcclusionViewBias;
-				DiffuseLighting = SampleIrradianceCacheInterpolated(WorldPosition, Material.WorldNormal, BiasOffset, ClipmapIndex);
+				float CellSize = GetRadianceProbeClipmapCellSize(ClipmapIndex);
+				float CameraDistance = GetDistanceToCameraFromViewVector(PrimaryView.TranslatedWorldCameraOrigin - TranslatedWorldPosition);
+				// Reduce the view dependent bias as the camera gets closer than the distance between probes
+				float ViewBias = lerp(0.0f, .8f, saturate(CameraDistance / CellSize));
+				// Single tweakable interpolation bias that combines normal offset with offset toward camera and is proportional to the distance between probes
+				float3 BiasOffset = (Material.WorldNormal * .2f + V * ViewBias) * (.75f * CellSize * ProbeOcclusionBias);
+				float3 TranslatedSamplePosition = TranslatedWorldPosition + BiasOffset;
+
+				bool bPixelShouldProcessFeedback = all((InterpolateCoord & InterpolationFeedbackTileWrapMask) == InterpolationFeedbackTileJitter);
+				bool bSampleReflection = DiffuseLerp < 1.0f;				
+
+				FIrradianceCacheInterpolation Interpolation;
+				DiffuseLighting = SampleIrradianceCacheInterpolated(
+					TranslatedWorldPosition, 
+					TranslatedSamplePosition, 
+					Material.WorldNormal, 
+					ReflectionVector, 
+					ConeHalfAngle, 
+					ClipmapIndex, 
+					bPixelShouldProcessFeedback, 
+					bSampleReflection, 
+					SpecularLighting, 
+					Interpolation);
+
+				if (bPixelShouldProcessFeedback)
+				{
+					HandleInterpolationMisses(Interpolation, ClipmapIndex, TranslatedSamplePosition);
+				}
+
+				#define DEBUG_VISUALIZE_INTERPOLATION_MISS 0
+				#if DEBUG_VISUALIZE_INTERPOLATION_MISS
+				if (!Interpolation.bSuccess)
+				{
+					DiffuseLighting = float3(1, 0, 0);
+				}
+				#endif
 			}
 			else
 			{
 				DiffuseLighting = GetSkySHDiffuse(Material.WorldNormal) * View.SkyLightColor.rgb;
+				SpecularLighting = EvaluateSkyRadiance(ReflectionVector);
 			}
+
+			SpecularLighting = lerp(SpecularLighting, DiffuseLighting, DiffuseLerp);
 
 			// FDiffuseIndirectCompositePS applies DiffuseColor
-			RWDiffuseIndirect[SvPosition] = float4(DiffuseLighting * View.PreExposure, 0.0f);
-
-			float3 SpecularLighting = 0;
-
-#define COMPUTE_ROUGH_SPECULAR 1
-#if COMPUTE_ROUGH_SPECULAR
-
-			const float LumenSpecularRayAlpha = LumenCombineReflectionsAlpha(Material.Roughness, HasBackfaceDiffuse(Material));
-			if (LumenSpecularRayAlpha < 1.0f || IsClearCoat(Material))
-			{
-				//GBufferData.WorldNormal = GetClearCoatBottomNormal(GBufferData, GBufferData.WorldNormal);
-				//float ReflectionVector = reflect(-V, GBufferData.WorldNormal);
-				//SpecularLighting = SampleIrradianceCacheInterpolated(WorldPosition, ReflectionVector, V, ClipmapIndex);
-				SpecularLighting = DiffuseLighting;
-			}
-#endif
-			RWRoughSpecularIndirect[SvPosition] = SpecularLighting * View.PreExposure;
+			RWDiffuseIndirect[uint3(InterpolateCoord, 0)] = DiffuseLighting * View.PreExposure;
+			RWRoughSpecularIndirect[uint3(InterpolateCoord, 0)] = SpecularLighting * View.PreExposure;
 		}
 		else
 		{
-			RWDiffuseIndirect[SvPosition] = 0;
-			RWRoughSpecularIndirect[SvPosition] = 0;
+			//@todo - remove these clears
+			// DiffuseIndirectComposite reads these when upsampling has no valid samples
+			RWDiffuseIndirect[uint3(InterpolateCoord, 0)] = float3(0, 0, 0) * View.PreExposure;
+			RWRoughSpecularIndirect[uint3(InterpolateCoord, 0)] = 0;
 		}
 	}
 }

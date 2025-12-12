@@ -53,12 +53,12 @@ void MarkRadianceProbesUsedByTranslucencyVolumeCS(
 
 	if (all(GridCoordinate < TranslucencyGIGridSize))
 	{
-		float3 WorldPosition = ComputeCellWorldPosition(GridCoordinate, FROXEL_POS_OFFSET ? FrameJitterOffset.xyz : 0.0f);
-		uint ClipmapIndex = GetRadianceProbeClipmapForMark(WorldPosition);
+		float3 TranslatedWorldPosition = ComputeCellTranslatedWorldPosition(GridCoordinate, FROXEL_POS_OFFSET ? FrameJitterOffset.xyz : 0.0f);
+		uint ClipmapIndex = GetRadianceProbeClipmapForMark(TranslatedWorldPosition);
 
 		if (IsValidRadianceCacheClipmapForMark(ClipmapIndex) && IsFroxelVisible(GridCoordinate))
 		{
-			MarkPositionUsedInIndirectionTexture(WorldPosition, ClipmapIndex);
+			MarkPositionUsedInIndirectionTexture(TranslatedWorldPosition, ClipmapIndex);
 		}
 	}
 }
@@ -133,7 +133,7 @@ void TranslucencyVolumeTraceVoxelsCS(
 			Coverage.bValid = false;
 
 #if PROBE_SOURCE_MODE == PROBE_SOURCE_MODE_RADIANCE_CACHE
-			Coverage = GetRadianceCacheCoverage(WorldPosition, WorldConeDirection, .5f);
+			Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, WorldConeDirection, .5f);
 				
 			if (Coverage.bValid)
 			{
@@ -173,7 +173,7 @@ void TranslucencyVolumeTraceVoxelsCS(
 #elif PROBE_SOURCE_MODE == PROBE_SOURCE_MODE_RADIANCE_CACHE
 			if (Coverage.bValid)
 			{
-				SampleRadianceCacheAndApply(Coverage, WorldPosition, WorldConeDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency);
+				SampleRadianceCacheAndApply(Coverage, TranslatedWorldPosition, WorldConeDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency);
 			}
 			else
 #endif

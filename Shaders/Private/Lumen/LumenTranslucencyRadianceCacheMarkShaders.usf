@@ -126,10 +126,10 @@ void MainPS(
 	if (LumenTranslucencyRadianceCacheMarkPass.MarkRadianceCache > 0)
 	{
 		//@todo - conservative coverage
-		uint ClipmapIndex = GetRadianceProbeClipmapForMark(WSHackToFloat(GetWorldPosition(MaterialParameters)), InterleavedGradientNoise(MaterialParameters.SvPosition.xy, View.StateFrameIndexMod8));
+		uint ClipmapIndex = GetRadianceProbeClipmapForMark(GetTranslatedWorldPosition(MaterialParameters), InterleavedGradientNoise(MaterialParameters.SvPosition.xy, View.StateFrameIndexMod8));
 		if (IsValidRadianceCacheClipmapForMark(ClipmapIndex))
 		{
-			MarkPositionUsedInIndirectionTexture(WSHackToFloat(GetWorldPosition(MaterialParameters)), ClipmapIndex);
+			MarkPositionUsedInIndirectionTexture(GetTranslatedWorldPosition(MaterialParameters), ClipmapIndex);
 		}
 	}
 

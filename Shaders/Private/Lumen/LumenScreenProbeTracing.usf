@@ -135,7 +135,7 @@ void ScreenProbeTraceScreenTexturesCS(
 				bool bValidRadianceCacheCoverage = false;
 				#if RADIANCE_CACHE
 				{
-					FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition - DFHackToFloat(PrimaryView.PreViewTranslation), RayWorldDirection, 0);
+					FRadianceCacheCoverage Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, RayWorldDirection, 0);
 					if (Coverage.bValid)
 					{
 						TraceDistance = min(TraceDistance, Coverage.MinTraceDistanceBeforeInterpolation);
@@ -758,7 +758,7 @@ void TraceVoxels(
 			FRadianceCacheCoverage Coverage;
 			Coverage.bValid = false;
 #if RADIANCE_CACHE
-			Coverage = GetRadianceCacheCoverage(WorldPosition, RayWorldDirection, 0);
+			Coverage = GetRadianceCacheCoverage(TranslatedWorldPosition, RayWorldDirection, 0);
 
 			if (Coverage.bValid)
 			{
@@ -842,9 +842,9 @@ void TraceVoxels(
 
 				#if SCREEN_PROBE_EXTRA_AO
 					// AO may need hit distances further than what screen probes trace
-					SampleRadianceCacheAndApply(Coverage, WorldPosition, RayWorldDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency, TraceHitDistance);
+					SampleRadianceCacheAndApply(Coverage, TranslatedWorldPosition, RayWorldDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency, TraceHitDistance);
 				#else
-					SampleRadianceCacheAndApply(Coverage, WorldPosition, RayWorldDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency);
+					SampleRadianceCacheAndApply(Coverage, TranslatedWorldPosition, RayWorldDirection, ConeHalfAngle, /*RandomScalarForStochasticIterpolation*/ 0.5f, TraceResult.Lighting, TraceResult.Transparency);
 				#endif
 			}
 			else
